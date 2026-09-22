@@ -1,0 +1,25 @@
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #17221d; background: #f4f1e9; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+.shell { width: min(960px, calc(100% - 32px)); margin: 0 auto; padding: 56px 0; }
+header { margin-bottom: 32px; }
+.eyebrow, .label { color: #65766d; font-size: .75rem; font-weight: 800; letter-spacing: .14em; }
+h1, h2, p { margin-top: 0; }
+h1 { font-family: Georgia, serif; font-size: clamp(2.5rem, 8vw, 5rem); font-weight: 400; line-height: .95; margin-bottom: 16px; }
+h2 { font-family: Georgia, serif; font-weight: 400; font-size: 1.65rem; margin: 8px 0; }
+.muted { color: #65766d; }
+.hero-card, .panel { background: #fffdf8; border: 1px solid #d8d5ca; border-radius: 18px; padding: 24px; box-shadow: 0 8px 30px #3330180d; }
+.hero-card { display: grid; grid-template-columns: 1fr 2fr auto; align-items: center; gap: 24px; margin-bottom: 16px; }
+.health-bar, .room-track { height: 10px; background: #e7e4d9; border-radius: 99px; overflow: hidden; }
+.health-bar span, .room-track span { display: block; height: 100%; background: #6c9b74; border-radius: inherit; transition: width .2s; }
+.status-pill { border-radius: 99px; padding: 8px 12px; background: #e8eee5; color: #3d6644; font-size: .8rem; font-weight: 700; text-transform: capitalize; }
+.status-pill[data-status="preparation"] { background: #f1ead7; color: #8a682e; }
+.status-pill[data-status="completed"] { background: #dcefe3; color: #286640; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.panel p:last-child { margin-bottom: 0; }
+.controls { display: flex; align-items: center; gap: 12px; margin: 24px 0; flex-wrap: wrap; }
+button { border: 0; border-radius: 10px; background: #214c35; color: white; cursor: pointer; font: inherit; font-weight: 700; padding: 13px 18px; }
+button.secondary { background: transparent; border: 1px solid #b7b5aa; color: #405048; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+.log p { border-top: 1px solid #e6e3da; padding-top: 10px; margin: 10px 0 0; }
+@media (max-width: 640px) { .shell { padding: 32px 0; } .hero-card, .grid { grid-template-columns: 1fr; } .hero-card { gap: 12px; } }
