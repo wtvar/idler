@@ -1,5 +1,5 @@
 import { FIRST_AREA } from './content';
-import type { Command, CombatState, Event, GameState, StatusEffect } from './types';
+import type { Command, CombatState, Event, ExpeditionOutcome, GameState, StatusEffect } from './types';
 
 const SIMULATION_VERSION = 'v1-expedition-loop';
 const TICK_MILLISECONDS = 100;
@@ -8,6 +8,7 @@ const ENEMY_ATTACK_INTERVAL = 1_500;
 const HERO_MAX_MANA = 30;
 const HERO_MANA_REGENERATION = 2;
 const HERO_HEALTH_REGENERATION = 1;
+const RECOVERY_MILLISECONDS = 3_000;
 
 function event(message: string, id: number): Event { return { id, message }; }
 
@@ -35,7 +36,7 @@ export function calculateMitigatedDamage(rawDamage: number, mitigation: number):
   return Math.max(1, Math.floor(rawDamage * 100 / (100 + Math.max(0, mitigation))));
 }
 
-export function createGame(seed = 1): GameState {
+export function createGame(seed = 1, options: { startingHealth?: number; enemyAttack?: number } = {}): GameState {
   const room = FIRST_AREA.rooms[0];
   return {
     simulationVersion: SIMULATION_VERSION,
@@ -46,11 +47,14 @@ export function createGame(seed = 1): GameState {
     roomCount: FIRST_AREA.rooms.length,
     roomIndex: 0,
     roomType: room.type,
-    hero: { name: 'Ari', health: 100, maxHealth: 100, attack: 8, attackInterval: HERO_ATTACK_INTERVAL },
+    hero: { name: 'Ari', health: options.startingHealth ?? 100, maxHealth: 100, attack: 8, attackInterval: HERO_ATTACK_INTERVAL },
     enemy: room.type === 'combat' ? { name: room.enemy.name, health: room.enemy.health, maxHealth: room.enemy.health } : null,
     committed: { experience: 0, currency: 0 },
+    recoveryRemainingMilliseconds: 0,
+    autoRepeat: true,
+    outcome: null,
     events: [event('A new Hero is ready in Sunlit Meadow.', 0)],
-    combat: combatFor(room.type === 'combat' ? room.enemy.attack : 0),
+    combat: combatFor(room.type === 'combat' ? options.enemyAttack ?? room.enemy.attack : 0),
   };
 }
 
@@ -76,6 +80,34 @@ function enterRoom(state: GameState, roomIndex: number): GameState {
   };
 }
 
+function currentRoomLoss(state: GameState): { experience: number; currency: number } {
+  const room = FIRST_AREA.rooms[state.roomIndex];
+  return room ? { experience: room.experience, currency: room.currency } : { experience: 0, currency: 0 };
+}
+
+function outcome(state: GameState, result: ExpeditionOutcome['result'], recoveryMilliseconds: number, willRestart: boolean): ExpeditionOutcome {
+  return {
+    result,
+    roomReached: Math.min(state.roomIndex + 1, state.roomCount),
+    committed: state.committed,
+    lost: result === 'completed' ? { experience: 0, currency: 0 } : currentRoomLoss(state),
+    recoveryMilliseconds,
+    willRestart,
+  };
+}
+
+function beginRecovery(state: GameState): GameState {
+  const next = {
+    ...state,
+    status: 'recovery' as const,
+    recoveryRemainingMilliseconds: RECOVERY_MILLISECONDS,
+    outcome: outcome(state, 'defeated', RECOVERY_MILLISECONDS, state.autoRepeat),
+    hero: { ...state.hero, health: 0 },
+    combat: { ...state.combat, pendingMilliseconds: 0 },
+  };
+  return addEvent(next, 'Ari was defeated. The incomplete Room and its rewards were lost; Recovery begins.');
+}
+
 function commitRoom(state: GameState): GameState {
   const room = FIRST_AREA.rooms[state.roomIndex];
   return {
@@ -95,6 +127,7 @@ function hasStun(statuses: StatusEffect[]): boolean {
 
 function resolveCombatTick(state: GameState): GameState {
   if (state.roomType !== 'combat' || !state.enemy) return state;
+  if (state.hero.health <= 0) return beginRecovery(state);
   let next = withCombat(state, {
     heroStatuses: expireStatuses(state.combat.heroStatuses),
     enemyStatuses: expireStatuses(state.combat.enemyStatuses),
@@ -114,8 +147,7 @@ function resolveCombatTick(state: GameState): GameState {
     next = withCombat({ ...next, enemy: { ...next.enemy, health: next.enemy.health - damage } }, { heroAttackProgress: next.combat.heroAttackProgress - next.hero.attackInterval });
     next = addEvent(next, `Ari attacks ${enemyName} for ${damage} damage.`);
   }
-  if (next.enemy && next.enemy.health <= 0) return next;
-  if (enemyReady && next.enemy) {
+  if (enemyReady && next.enemy && next.enemy.health > 0) {
     const damage = calculateMitigatedDamage(next.combat.enemyAttack, next.combat.heroDefense);
     const enemyName = next.enemy.name;
     next = { ...next, hero: { ...next.hero, health: next.hero.health - damage } };
@@ -123,14 +155,15 @@ function resolveCombatTick(state: GameState): GameState {
     next = addEvent(next, `${enemyName} attacks Ari for ${damage} damage; mitigation applied.`);
   }
   if (next.hero.health <= 0) {
-    next = { ...next, hero: { ...next.hero, health: 0 }, status: 'defeated' };
-    next = addEvent(next, 'Ari was defeated before the Room completed.');
+    return beginRecovery(next);
   }
   return next;
 }
 
 function advance(state: GameState, milliseconds: number): GameState {
-  if (state.status !== 'active' || milliseconds <= 0) return state;
+  if (milliseconds <= 0) return state;
+  if (state.status === 'recovery') return advanceRecovery(state, milliseconds);
+  if (state.status !== 'active') return state;
   let next = { ...state, elapsedMilliseconds: state.elapsedMilliseconds + milliseconds };
   let remaining = milliseconds + next.combat.pendingMilliseconds;
   next = withCombat(next, { pendingMilliseconds: 0 });
@@ -150,7 +183,7 @@ function advance(state: GameState, milliseconds: number): GameState {
       }
     } else {
       next = resolveCombatTick(next);
-      if (next.enemy && next.enemy.health <= 0) {
+      if (next.status === 'active' && next.enemy && next.enemy.health <= 0) {
         const defeatedEnemy = next.enemy.name;
         next = commitRoom(next);
         next = addEvent(next, `${defeatedEnemy} is defeated; Room rewards are committed.`);
@@ -158,19 +191,46 @@ function advance(state: GameState, milliseconds: number): GameState {
       }
     }
     if (next.roomType === 'complete') {
+      next = { ...next, outcome: outcome(next, 'completed', 0, false) };
       next = addEvent(next, 'Expedition completed. All Rooms are secured.');
       break;
     }
   }
-  next = withCombat(next, { pendingMilliseconds: remaining });
+  if (next.status === 'active') next = withCombat(next, { pendingMilliseconds: remaining });
+  else next = withCombat(next, { pendingMilliseconds: 0 });
   return next;
+}
+
+function restartExpedition(state: GameState): GameState {
+  const fresh = enterRoom({
+    ...state,
+    status: 'active',
+    committed: { experience: 0, currency: 0 },
+    recoveryRemainingMilliseconds: 0,
+    hero: { ...state.hero, health: state.hero.maxHealth },
+  }, 0);
+  return addEvent(fresh, 'Recovery complete. The selected Area automatically restarts from Room 1.');
+}
+
+function advanceRecovery(state: GameState, milliseconds: number): GameState {
+  const remaining = Math.max(0, state.recoveryRemainingMilliseconds - milliseconds);
+  if (remaining > 0) return { ...state, elapsedMilliseconds: state.elapsedMilliseconds + milliseconds, recoveryRemainingMilliseconds: remaining };
+  const recovered = { ...state, elapsedMilliseconds: state.elapsedMilliseconds + milliseconds, recoveryRemainingMilliseconds: 0 };
+  if (state.autoRepeat) return restartExpedition(recovered);
+  return addEvent({ ...recovered, status: 'preparation', hero: { ...recovered.hero, health: recovered.hero.maxHealth } }, 'Recovery complete. Automatic repeat is stopped; the Area is ready for Preparation.');
 }
 
 export function dispatch(state: GameState, command: Command): GameState {
   if (command.type === 'START_EXPEDITION' && state.status === 'preparation') {
-    return addEvent({ ...state, status: 'active' }, 'Expedition started. Preparation is locked.');
+    return addEvent({ ...state, status: 'active', autoRepeat: true, outcome: null }, 'Expedition started. Preparation is locked.');
   }
   if (command.type === 'ADVANCE_TIME') return advance(state, command.milliseconds);
-  if (command.type === 'WITHDRAW' && state.status === 'active') return addEvent({ ...state, status: 'withdrawn' }, 'Expedition withdrawn; committed progress is retained.');
+  if (command.type === 'WITHDRAW' && state.status === 'active') {
+    const next = { ...state, status: 'withdrawn' as const, autoRepeat: false, outcome: outcome(state, 'withdrawn', 0, false) };
+    return addEvent(next, 'Expedition withdrawn. Committed progress is retained; incomplete Room rewards were lost.');
+  }
+  if (command.type === 'STOP_AUTO_REPEAT' && (state.status === 'active' || state.status === 'recovery')) {
+    return addEvent({ ...state, autoRepeat: false, outcome: state.outcome ? { ...state.outcome, willRestart: false } : state.outcome }, 'Automatic repeat stopped.');
+  }
   return state;
 }

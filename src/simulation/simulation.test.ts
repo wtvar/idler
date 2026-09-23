@@ -73,4 +73,47 @@ describe('deterministic simulation boundary', () => {
     expect(game.hero.health).toBe(99);
     expect(game.events.some(({ message }) => message.includes('mitigation'))).toBe(true);
   });
+
+  it('withdraws after the current step and summarizes committed and lost progress', () => {
+    let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 2_000 });
+    game = dispatch(game, { type: 'WITHDRAW' });
+
+    expect(game.status).toBe('withdrawn');
+    expect(game.committed).toEqual({ experience: 0, currency: 0 });
+    expect(game.outcome).toMatchObject({ result: 'withdrawn', roomReached: 1, lost: { experience: 10, currency: 2 } });
+    expect(game.events.at(-1)?.message).toContain('incomplete Room rewards were lost');
+  });
+
+  it('enters Recovery on defeat and automatically restarts the selected Area', () => {
+    let game = dispatch(createGame(7, { startingHealth: 1, enemyAttack: 100 }), { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 1_500 });
+
+    expect(game.status).toBe('recovery');
+    expect(game.outcome).toMatchObject({ result: 'defeated', recoveryMilliseconds: 3_000, willRestart: true });
+    expect(game.committed).toEqual({ experience: 0, currency: 0 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 3_000 });
+    expect(game.status).toBe('active');
+    expect(game.roomIndex).toBe(0);
+    expect(game.hero.health).toBe(100);
+    expect(game.events.at(-1)?.message).toContain('restarts from Room 1');
+  });
+
+  it('stops automatic repeat during Recovery and waits until Recovery ends', () => {
+    let game = dispatch(createGame(7, { startingHealth: 1, enemyAttack: 100 }), { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 1_500 });
+    game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
+    expect(game.status).toBe('recovery');
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 3_000 });
+    expect(game.status).toBe('preparation');
+    expect(game.events.at(-1)?.message).toContain('Automatic repeat is stopped');
+  });
+
+  it('uses Hero defeat when a tick leaves both actors at zero', () => {
+    let game = dispatch(createGame(7, { startingHealth: 1, enemyAttack: 100 }), { type: 'START_EXPEDITION' });
+    game = { ...game, hero: { ...game.hero, health: 0 }, enemy: { name: 'Meadow Slime', health: 8, maxHealth: 18 } };
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 1_000 });
+    expect(game.status).toBe('recovery');
+    expect(game.outcome?.result).toBe('defeated');
+  });
 });

@@ -1,9 +1,10 @@
-export type ExpeditionStatus = 'preparation' | 'active' | 'completed' | 'withdrawn' | 'defeated';
+export type ExpeditionStatus = 'preparation' | 'active' | 'completed' | 'withdrawn' | 'defeated' | 'recovery';
 
 export type Command =
   | { type: 'START_EXPEDITION' }
   | { type: 'ADVANCE_TIME'; milliseconds: number }
-  | { type: 'WITHDRAW' };
+  | { type: 'WITHDRAW' }
+  | { type: 'STOP_AUTO_REPEAT' };
 
 export type Event = { id: number; message: string };
 
@@ -30,6 +31,15 @@ export type CombatState = {
   targetPolicy: 'first';
 };
 
+export type ExpeditionOutcome = {
+  result: 'completed' | 'withdrawn' | 'defeated';
+  roomReached: number;
+  committed: { experience: number; currency: number };
+  lost: { experience: number; currency: number };
+  recoveryMilliseconds: number;
+  willRestart: boolean;
+};
+
 export type GameState = {
   simulationVersion: string;
   seed: number;
@@ -42,6 +52,9 @@ export type GameState = {
   hero: { name: string; health: number; maxHealth: number; attack: number; attackInterval: number };
   enemy: { name: string; health: number; maxHealth: number } | null;
   committed: { experience: number; currency: number };
+  recoveryRemainingMilliseconds: number;
+  autoRepeat: boolean;
+  outcome: ExpeditionOutcome | null;
   events: Event[];
   combat: CombatState;
 };
