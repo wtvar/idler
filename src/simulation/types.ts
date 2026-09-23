@@ -7,6 +7,29 @@ export type Command =
 
 export type Event = { id: number; message: string };
 
+export type StatusEffect = {
+  name: 'bleed' | 'burn' | 'slow' | 'stun';
+  remainingMilliseconds: number;
+  magnitude: number;
+};
+
+export type CombatState = {
+  pendingMilliseconds: number;
+  heroAttackProgress: number;
+  enemyAttackProgress: number;
+  heroMana: number;
+  maxMana: number;
+  heroManaRegeneration: number;
+  heroHealthRegeneration: number;
+  heroDefense: number;
+  enemyAttack: number;
+  enemyDefense: number;
+  heroCooldowns: Record<string, number>;
+  heroStatuses: StatusEffect[];
+  enemyStatuses: StatusEffect[];
+  targetPolicy: 'first';
+};
+
 export type GameState = {
   simulationVersion: string;
   seed: number;
@@ -20,4 +43,5 @@ export type GameState = {
   enemy: { name: string; health: number; maxHealth: number } | null;
   committed: { experience: number; currency: number };
   events: Event[];
+  combat: CombatState;
 };

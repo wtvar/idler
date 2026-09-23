@@ -18,6 +18,13 @@ describe('deterministic simulation boundary', () => {
     expect(run()).toEqual(run());
   });
 
+  it('produces the same state when controlled time is split at a tick boundary', () => {
+    const start = dispatch(createGame(9), { type: 'START_EXPEDITION' });
+    const split = dispatch(dispatch(start, { type: 'ADVANCE_TIME', milliseconds: 1 }), { type: 'ADVANCE_TIME', milliseconds: 99 });
+    const whole = dispatch(start, { type: 'ADVANCE_TIME', milliseconds: 100 });
+    expect(split).toEqual(whole);
+  });
+
   it('commits combat and empty Room rewards only as Rooms complete', () => {
     let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 1_000 });
@@ -26,19 +33,44 @@ describe('deterministic simulation boundary', () => {
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 2_000 });
     expect(game.roomIndex).toBe(1);
     expect(game.committed).toEqual({ experience: 10, currency: 2 });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 1 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });
     expect(game.roomIndex).toBe(2);
     expect(game.committed).toEqual({ experience: 15, currency: 3 });
   });
 
   it('completes the authored fixture and commits the final Room', () => {
     let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 3_000 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 4_000 });
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 3_000 });
     expect(game.status).toBe('completed');
     expect(game.roomType).toBe('complete');
     expect(game.committed).toEqual({ experience: 30, currency: 6 });
     expect(game.events.at(-1)?.message).toContain('Expedition completed');
+  });
+
+  it('regenerates resources during Combat and applies the Empty Room effect', () => {
+    let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 2_000 });
+
+    expect(game.combat.heroMana).toBeGreaterThan(20);
+    expect(game.combat.heroMana).toBeLessThanOrEqual(game.combat.maxMana);
+
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 1_000 });
+    expect(game.roomType).toBe('empty');
+    const healthBeforeEffect = game.hero.health;
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });
+    expect(game.hero.health).toBeGreaterThanOrEqual(healthBeforeEffect);
+    expect(game.events.at(-1)?.message).toContain('effect');
+    expect(game.committed).toEqual({ experience: 15, currency: 3 });
+  });
+
+  it('uses mitigation and initiative ordering in a Combat tick', () => {
+    let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 1_500 });
+
+    expect(game.enemy?.health).toBe(10);
+    expect(game.hero.health).toBe(99);
+    expect(game.events.some(({ message }) => message.includes('mitigation'))).toBe(true);
   });
 });
