@@ -26,6 +26,7 @@ h2 { font-family: Georgia, serif; font-weight: 400; font-size: 1.65rem; margin: 
 .skill-controls > div { display: grid; gap: 8px; }
 .skill-controls .label { font-size: .68rem; }
 .skill-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.skill-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .skill-row small, .skill-controls button span { color: #65766d; }
 .target-policy { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
 select { border: 1px solid #b7b5aa; border-radius: 8px; background: #fffdf8; padding: 8px; font: inherit; }

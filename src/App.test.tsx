@@ -25,4 +25,10 @@ describe('playable browser shell', () => {
     expect(screen.getByRole('combobox', { name: 'Target policy' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Free Respec' })).toBeDisabled();
   });
+
+  it('shows a separate rank-up control for Active Skills', () => {
+    render(<App />);
+    expect(screen.getByRole('button', { name: /Remove Measured Strike for Expedition/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Level up Measured Strike/ })).toBeInTheDocument();
+  });
 });
