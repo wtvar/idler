@@ -226,8 +226,8 @@ export function dispatch(state: GameState, command: Command): GameState {
   }
   if (command.type === 'ADVANCE_TIME') return advance(state, command.milliseconds);
   if (command.type === 'WITHDRAW' && state.status === 'active') {
-    const next = { ...state, status: 'withdrawn' as const, autoRepeat: false, outcome: outcome(state, 'withdrawn', 0, false) };
-    return addEvent(next, 'Expedition withdrawn. Committed progress is retained; incomplete Room rewards were lost.');
+    const next = { ...state, status: 'preparation' as const, autoRepeat: false, outcome: outcome(state, 'withdrawn', 0, false) };
+    return addEvent(next, 'Expedition withdrawn. Committed progress is retained; incomplete Room rewards were lost. Preparation is available.');
   }
   if (command.type === 'STOP_AUTO_REPEAT' && (state.status === 'active' || state.status === 'recovery')) {
     return addEvent({ ...state, autoRepeat: false, outcome: state.outcome ? { ...state.outcome, willRestart: false } : state.outcome }, 'Automatic repeat stopped.');

@@ -79,10 +79,12 @@ describe('deterministic simulation boundary', () => {
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 2_000 });
     game = dispatch(game, { type: 'WITHDRAW' });
 
-    expect(game.status).toBe('withdrawn');
+    expect(game.status).toBe('preparation');
     expect(game.committed).toEqual({ experience: 0, currency: 0 });
     expect(game.outcome).toMatchObject({ result: 'withdrawn', roomReached: 1, lost: { experience: 10, currency: 2 } });
     expect(game.events.at(-1)?.message).toContain('incomplete Room rewards were lost');
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    expect(game.status).toBe('active');
   });
 
   it('enters Recovery on defeat and automatically restarts the selected Area', () => {
