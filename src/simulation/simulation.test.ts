@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { ITEM_BASES, ITEM_QUALITY_MULTIPLIERS } from './content';
+import { AREAS, ITEM_BASES, ITEM_QUALITY_MULTIPLIERS, REGION_BOSS_ATTEMPT_COST, REGION_BOSS_ID } from './content';
 import { acceptLoot, availableInventorySpace, compareItem, createGame, dispatch, equipmentStats, generateItem, getAreaMap, inventoryCapacity, selectTarget } from './simulation';
 import type { GameState } from './types';
 
 describe('deterministic simulation boundary', () => {
+  it('authors the complete Region route and chapter Boss placement', () => {
+    expect(AREAS.filter(({ kind }) => kind === 'ordinary')).toHaveLength(20);
+    expect(AREAS.filter(({ kind }) => kind === 'boss')).toHaveLength(4);
+    expect(AREAS.find(({ id }) => id === REGION_BOSS_ID)).toMatchObject({ kind: 'region-boss', attemptCost: REGION_BOSS_ATTEMPT_COST });
+    expect(AREAS.filter(({ kind }) => kind === 'ordinary').every(({ rooms }) => rooms.length >= 3)).toBe(true);
+    expect(AREAS.filter(({ kind }) => kind === 'ordinary').slice(4, 20).every(({ rooms }) => rooms.length === 12)).toBe(true);
+    expect(AREAS.filter(({ kind }) => kind === 'ordinary').flatMap(({ rooms }) => rooms).some((room) => room.type === 'combat' && (room.championChance ?? 0) > 0)).toBe(true);
+  });
+
+  it('requires currency for a Region Boss attempt and consumes it on selection', () => {
+    let game = createGame();
+    game = { ...game, areaProgress: { ...game.areaProgress, 'region-area-20': { completions: 1 } } };
+    expect(dispatch(game, { type: 'SELECT_AREA', areaId: REGION_BOSS_ID }).selectedAreaId).toBe(game.selectedAreaId);
+    game = { ...game, currency: REGION_BOSS_ATTEMPT_COST };
+    const selected = dispatch(game, { type: 'SELECT_AREA', areaId: REGION_BOSS_ID });
+    expect(selected.selectedAreaId).toBe(REGION_BOSS_ID);
+    expect(selected.currency).toBe(0);
+  });
+
   it('unlocks Areas sequentially and requires replaying an ordinary Area before its Boss Area', () => {
     let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
     game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });

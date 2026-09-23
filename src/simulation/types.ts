@@ -1,11 +1,11 @@
 export type ExpeditionStatus = 'preparation' | 'active' | 'completed' | 'withdrawn' | 'defeated' | 'recovery';
 
-export type AreaKind = 'ordinary' | 'boss';
+export type AreaKind = 'ordinary' | 'boss' | 'region-boss';
 export type AreaUnlockRequirement = { type: 'start' } | { type: 'complete-area'; areaId: string; completions: number };
 export type RoomDefinition =
-  | { type: 'combat'; enemy: { name: string; health: number; attack: number; defense?: number }; experience: number; currency: number }
+  | { type: 'combat'; enemy: { name: string; health: number; attack: number; defense?: number }; experience: number; currency: number; championChance?: number }
   | { type: 'empty'; durationMilliseconds: number; healthEffect: number; manaEffect: number; experience: number; currency: number };
-export type AreaDefinition = { id: string; name: string; kind: AreaKind; unlock: AreaUnlockRequirement; rooms: RoomDefinition[]; encounterTable: string[]; boss?: { name: string } };
+export type AreaDefinition = { id: string; name: string; kind: AreaKind; unlock: AreaUnlockRequirement; rooms: RoomDefinition[]; encounterTable: string[]; boss?: { name: string }; attemptCost?: number };
 export type AreaCompletion = { completions: number };
 export type AreaMapStatus = 'locked' | 'unlocked' | 'completed' | 'replayable' | 'boss';
 export type AreaMapEntry = AreaDefinition & { status: AreaMapStatus; completions: number };
@@ -143,7 +143,7 @@ export type GameState = {
   roomCount: number;
   roomType: 'combat' | 'empty' | 'complete';
   hero: { name: string; health: number; maxHealth: number; attack: number; attackInterval: number };
-  enemy: { name: string; health: number; maxHealth: number } | null;
+  enemy: { name: string; health: number; maxHealth: number; champion?: boolean } | null;
   currency: number;
   committed: { experience: number; currency: number };
   recoveryRemainingMilliseconds: number;

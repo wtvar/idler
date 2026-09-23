@@ -116,14 +116,15 @@ export function validateContent(areas: AreaDefinition[] = AREAS, skills: SkillDe
     const encounterNames = new Set(area.encounterTable);
     for (const room of area.rooms) {
       if (room.type === 'combat' && !encounterNames.has(room.enemy.name)) issues.push(issue('encounter-reference', `Room enemy ${room.enemy.name} is missing from ${area.id}'s encounter table`, `areas.${area.id}.rooms`));
-      if (room.type === 'combat' && (room.enemy.health <= 0 || room.enemy.attack < 0 || room.experience < 0 || room.currency < 0)) issues.push(issue('invalid-room-values', `Area ${area.id} contains invalid Combat or reward values`, `areas.${area.id}.rooms`));
+      if (room.type === 'combat' && (room.enemy.health <= 0 || room.enemy.attack < 0 || room.experience < 0 || room.currency < 0 || (room.championChance ?? 0) < 0 || (room.championChance ?? 0) > 1)) issues.push(issue('invalid-room-values', `Area ${area.id} contains invalid Combat or reward values`, `areas.${area.id}.rooms`));
       if (room.type === 'empty' && (room.durationMilliseconds < 0 || room.experience < 0 || room.currency < 0)) issues.push(issue('invalid-room-values', `Area ${area.id} contains invalid Empty Room values`, `areas.${area.id}.rooms`));
     }
     const unlock = area.unlock;
     if (unlock.type === 'complete-area' && !areas.some((candidate) => candidate.id === unlock.areaId)) issues.push(issue('area-reference', `Area ${area.id} references missing unlock Area ${unlock.areaId}`, `areas.${area.id}.unlock`));
     if (unlock.type === 'complete-area' && (!Number.isInteger(unlock.completions) || unlock.completions < 1)) issues.push(issue('invalid-unlock', `Area ${area.id} has an invalid completion requirement`, `areas.${area.id}.unlock`));
-    if (area.kind === 'boss' && !area.boss) issues.push(issue('boss-definition', `Boss Area ${area.id} must define a Boss`, `areas.${area.id}`));
-    if (area.kind === 'boss' && area.boss && !encounterNames.has(area.boss.name)) issues.push(issue('boss-reference', `Boss ${area.boss.name} is missing from ${area.id}'s encounter table`, `areas.${area.id}.boss`));
+    if (area.kind !== 'ordinary' && !area.boss) issues.push(issue('boss-definition', `Boss Area ${area.id} must define a Boss`, `areas.${area.id}`));
+    if (area.kind !== 'ordinary' && area.boss && !encounterNames.has(area.boss.name)) issues.push(issue('boss-reference', `Boss ${area.boss.name} is missing from ${area.id}'s encounter table`, `areas.${area.id}.boss`));
+    if (area.kind === 'region-boss' && (!Number.isInteger(area.attemptCost) || (area.attemptCost ?? 0) <= 0)) issues.push(issue('region-boss-cost', `Region Boss ${area.id} must have a positive currency attempt cost`, `areas.${area.id}.attemptCost`));
   }
   const areaById = new Map(areas.map((area) => [area.id, area]));
   const areaReachable = (areaId: string, visiting = new Set<string>()): boolean => {

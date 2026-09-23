@@ -23,3 +23,5 @@ Complete a Room to receive identified Items. Inspect and equip them in the Equip
 Configure Health and Mana Potion thresholds and select one timed Combat buff in the Preparation panel. Potions are used automatically during Combat; the timed buff ends with its Expedition.
 
 Use the Area Map to select unlocked Areas. Complete an Area once to unlock the next ordinary Area, then replay the preceding Area to unlock its chapter Boss.
+
+Ordinary Areas can roll weighted Champions with increased rewards. The Region Boss unlocks after Area 20 and requires the displayed currency attempt cost before it can be selected.

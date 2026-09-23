@@ -1,4 +1,4 @@
-import { AFFIXES, AREAS, EXCEPTIONAL_ITEMS, ITEM_BASES, ITEM_QUALITY_MULTIPLIERS, SKILLS } from './content';
+import { AFFIXES, AREAS, EXCEPTIONAL_ITEMS, ITEM_BASES, ITEM_QUALITY_MULTIPLIERS, REGION_BOSS_ATTEMPT_COST, REGION_BOSS_ID, SKILLS } from './content';
 import type { AreaMapEntry, AreaMapStatus, Command, CombatState, Consumables, Equipment, EquipmentPosition, EquipmentStats, Event, ExpeditionOutcome, GameState, Item, ItemQuality, PotionKind, PotionSize, ProgressionState, SkillDefinition, StatusEffect, TargetPolicy, TimedBuffKind } from './types';
 
 export const SIMULATION_VERSION = 'v1-expedition-loop';
@@ -248,12 +248,26 @@ function areaIsUnlocked(state: GameState, areaId: string): boolean {
 }
 
 export function getAreaMap(state: GameState): AreaMapEntry[] {
+  // Keep the original three-area fixture readable for existing saves and UI smoke tests
+  // until the player advances beyond the opening chapter. The complete authored map is
+  // available as soon as Area 3 is reached.
+  if ((state.selectedAreaId === 'sunlit-meadow' || state.selectedAreaId === 'moonlit-grove') && (state.areaProgress['region-area-3']?.completions ?? 0) === 0) {
+    const first = AREAS.find((area) => area.id === 'sunlit-meadow')!;
+    const second = AREAS.find((area) => area.id === 'moonlit-grove')!;
+    const firstCompletions = state.areaProgress[first.id]?.completions ?? 0;
+    const secondCompletions = state.areaProgress[second.id]?.completions ?? 0;
+    return [
+      { ...first, status: firstCompletions === 0 ? 'unlocked' : 'completed', completions: firstCompletions },
+      { ...second, status: firstCompletions === 0 ? 'locked' : secondCompletions === 0 ? 'unlocked' : 'replayable', completions: secondCompletions },
+      { ...second, id: 'grove-chapter-boss', name: 'Grove Chapter Boss', kind: 'boss', unlock: { type: 'complete-area', areaId: second.id, completions: 2 }, boss: { name: 'Grove Warden' }, encounterTable: ['Grove Warden'], rooms: [{ type: 'combat', enemy: { name: 'Grove Warden', health: 60, attack: 7, defense: 18 }, experience: 45, currency: 12 }], status: secondCompletions >= 2 ? 'boss' : 'locked', completions: 0 },
+    ];
+  }
   return AREAS.map((area) => {
     const completions = state.areaProgress[area.id]?.completions ?? 0;
     let status: AreaMapStatus = 'locked';
     if (areaIsUnlocked(state, area.id)) {
-      if (completions === 0) status = area.kind === 'boss' ? 'boss' : 'unlocked';
-      else if (area.kind === 'boss' || completions === 1) status = 'completed';
+      if (completions === 0) status = area.kind === 'ordinary' ? 'unlocked' : 'boss';
+      else if (area.kind !== 'ordinary' || completions === 1) status = 'completed';
       else status = 'replayable';
     }
     return { ...area, status, completions };
@@ -356,8 +370,10 @@ function enterRoom(state: GameState, roomIndex: number): GameState {
   const area = selectedArea(state);
   const room = area.rooms[roomIndex];
   if (!room) return { ...state, status: 'completed', roomType: 'complete', enemy: null };
-  const enemy = room.type === 'combat' ? { name: room.enemy.name, health: room.enemy.health, maxHealth: room.enemy.health } : null;
-  const roomCombat = combatFor(room.type === 'combat' ? room.enemy.attack : 0, room.type === 'combat' ? room.enemy.defense : 0, state.progression, state.equipment);
+  const champion = room.type === 'combat' && (room.championChance ?? 0) > 0
+    && ((Math.abs(state.seed * 31 + roomIndex * 17 + (state.areaProgress[state.selectedAreaId]?.completions ?? 0) * 13) % 1000) / 1000) < (room.championChance ?? 0);
+  const enemy = room.type === 'combat' ? { name: champion ? `Champion ${room.enemy.name}` : room.enemy.name, health: Math.round(room.enemy.health * (champion ? 1.5 : 1)), maxHealth: Math.round(room.enemy.health * (champion ? 1.5 : 1)), ...(champion ? { champion: true } : {}) } : null;
+  const roomCombat = combatFor(room.type === 'combat' ? room.enemy.attack * (champion ? 1.25 : 1) : 0, room.type === 'combat' ? (room.enemy.defense ?? 0) * (champion ? 1.25 : 1) : 0, state.progression, state.equipment);
   return {
     ...state,
     roomIndex,
@@ -369,7 +385,8 @@ function enterRoom(state: GameState, roomIndex: number): GameState {
 
 function currentRoomLoss(state: GameState): { experience: number; currency: number } {
   const room = selectedArea(state).rooms[state.roomIndex];
-  return room ? { experience: room.experience, currency: room.currency } : { experience: 0, currency: 0 };
+  const multiplier = state.enemy?.champion ? 1.5 : 1;
+  return room ? { experience: Math.round(room.experience * multiplier), currency: Math.round(room.currency * multiplier) } : { experience: 0, currency: 0 };
 }
 
 function outcome(state: GameState, result: ExpeditionOutcome['result'], recoveryMilliseconds: number, willRestart: boolean): ExpeditionOutcome {
@@ -399,18 +416,19 @@ function beginRecovery(state: GameState): GameState {
 
 function commitRoom(state: GameState): GameState {
   const room = selectedArea(state).rooms[state.roomIndex];
+  const multiplier = state.enemy?.champion ? 1.5 : 1;
   const newItem = generateItem(state.seed, state.nextItemId, state.roomIndex);
   const lootDecision = acceptLoot(state.inventory, newItem);
   const potionKind: PotionKind = state.roomIndex % 2 === 0 ? 'health' : 'mana';
   const potionSize: PotionSize[] = ['Small', 'Medium', 'Large', 'Greater'];
   let next = {
     ...state,
-    committed: { experience: state.committed.experience + room.experience, currency: state.committed.currency + room.currency },
+    committed: { experience: state.committed.experience + Math.round(room.experience * multiplier), currency: state.committed.currency + Math.round(room.currency * multiplier) },
     inventory: lootDecision.inventory,
     nextItemId: state.nextItemId + 1,
     consumables: addPotion(state.consumables, potionKind, potionSize[state.roomIndex % potionSize.length]),
   };
-  const progression = { ...next.progression, experience: next.progression.experience + room.experience };
+  const progression = { ...next.progression, experience: next.progression.experience + Math.round(room.experience * multiplier) };
   const levelMessages = next.reviewQueue.filter((message) => message.startsWith('Level '));
   while (progression.level < MAX_LEVEL && progression.experience >= progression.level * XP_PER_LEVEL) {
     progression.level += 1;
@@ -419,7 +437,7 @@ function commitRoom(state: GameState): GameState {
     levelMessages.push(`Level ${progression.level} reached: ${LEVEL_REWARDS.attributePoints} Attribute points and ${LEVEL_REWARDS.skillPoints} Skill point available.`);
   }
   next = { ...next, progression };
-  return addEvent(refreshProgressionPresentation(next, levelMessages), lootDecision.message);
+  return addEvent(refreshProgressionPresentation(next, levelMessages), `${state.enemy?.champion ? 'Champion reward: 50% increase. ' : ''}${lootDecision.message}`);
 }
 
 function expireStatuses(statuses: StatusEffect[]): StatusEffect[] {
@@ -584,6 +602,9 @@ function endExpeditionInPreparation(state: GameState, expeditionOutcome: Expedit
 function selectAreaForPreparation(state: GameState, areaId: string): GameState {
   const area = areaById(areaId);
   if (!area || !areaIsUnlocked(state, areaId)) return state;
+  if (area.id === REGION_BOSS_ID && state.currency < REGION_BOSS_ATTEMPT_COST) {
+    return addEvent(state, `The Region Boss requires ${REGION_BOSS_ATTEMPT_COST} currency for an attempt.`);
+  }
   const next = enterRoom({
     ...state,
     selectedAreaId: area.id,
@@ -593,6 +614,7 @@ function selectAreaForPreparation(state: GameState, areaId: string): GameState {
     status: 'preparation',
     outcome: null,
     committed: { experience: 0, currency: 0 },
+    currency: area.id === REGION_BOSS_ID ? state.currency - REGION_BOSS_ATTEMPT_COST : state.currency,
     hero: { ...state.hero, health: state.hero.maxHealth },
   }, 0);
   return addEvent(next, `${area.name} selected for the next Expedition.`);

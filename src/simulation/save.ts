@@ -69,7 +69,7 @@ function migrate(value: unknown): SaveEnvelope {
     || !Array.isArray(state.inventory) || !isRecord(state.equipment) || !isRecord(state.consumables)) {
     throw new SaveError('Save state is invalid.');
   }
-  const defaults = createGame(state.seed);
+  const defaults = createGame(state.seed as number);
   const migratedState = {
     ...defaults,
     ...state,

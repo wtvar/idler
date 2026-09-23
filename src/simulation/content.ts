@@ -10,22 +10,75 @@ export const FIRST_AREA = {
   ],
 };
 
+const REGION_NAMES = ['Sunlit Meadow', 'Moonlit Grove', 'Whispering Fen', 'Amber Foothills', 'Cinderstep Pass', 'Silverpine Reach', 'Hollow Coast', 'Starfall Basin', 'Mossglass Wilds', 'Dawnstone Fields', 'Glimmering Vale', 'Ashen Orchard', 'Cloudbreak Ridge', 'Sable Marsh', 'Frostwillow Path', 'Redleaf Crossing', 'Nightbloom Hollow', 'Goldenwater Flats', 'Stormwatch Cliffs', 'Crown of Dawn'];
+const ENEMY_ARCHETYPES = [
+  { name: 'Wayward Slime', health: 24, attack: 2, defense: 2 },
+  { name: 'Bramblefang', health: 31, attack: 3, defense: 8 },
+  { name: 'Stoneback', health: 42, attack: 4, defense: 16 },
+  { name: 'Dusk Hound', health: 36, attack: 5, defense: 10 },
+  { name: 'Ember Moth', health: 29, attack: 5, defense: 6 },
+  { name: 'Ridge Troll', health: 52, attack: 6, defense: 20 },
+];
+
+function authoredRooms(areaNumber: number) {
+  const scale = 1 + (areaNumber - 1) * 0.12;
+  return Array.from({ length: 12 }, (_, index) => {
+    if (index === 3 || index === 8) return { type: 'empty' as const, durationMilliseconds: 200, healthEffect: 8 + areaNumber, manaEffect: 4, experience: 5 + areaNumber, currency: 2 + Math.floor(areaNumber / 4) };
+    const archetype = ENEMY_ARCHETYPES[(areaNumber + index) % ENEMY_ARCHETYPES.length];
+    return {
+      type: 'combat' as const,
+      enemy: { name: archetype.name, health: Math.round(archetype.health * scale), attack: Math.max(2, Math.round(archetype.attack * scale)), defense: Math.round(archetype.defense * scale) },
+      experience: 12 + areaNumber * 2 + index,
+      currency: 3 + Math.floor(areaNumber / 3),
+      championChance: index > 0 ? Math.min(0.2, 0.04 + areaNumber * 0.005) : 0,
+    };
+  });
+}
+
+const ordinaryAreas: AreaDefinition[] = REGION_NAMES.map((name, index) => ({
+  id: index === 0 ? 'sunlit-meadow' : index === 1 ? 'moonlit-grove' : `region-area-${index + 1}`,
+  name,
+  kind: 'ordinary',
+  unlock: index === 0 ? { type: 'start' } : { type: 'complete-area', areaId: index === 1 ? 'sunlit-meadow' : index === 2 ? 'moonlit-grove' : `region-area-${index}`, completions: 1 },
+  rooms: index === 0 ? FIRST_AREA.rooms : index === 1 ? [
+    { type: 'combat' as const, enemy: { name: 'Grove Stag', health: 28, attack: 4, defense: 8 }, experience: 18, currency: 4 },
+    { type: 'empty' as const, durationMilliseconds: 200, healthEffect: 6, manaEffect: 5, experience: 7, currency: 2 },
+    { type: 'combat' as const, enemy: { name: 'Moonroot Guardian', health: 34, attack: 5, defense: 14 }, experience: 24, currency: 5 },
+  ] : authoredRooms(index + 1),
+  encounterTable: index === 0 ? ['Meadow Slime', 'Thornback'] : index === 1 ? ['Grove Stag', 'Moonroot Guardian'] : ENEMY_ARCHETYPES.map(({ name: enemyName }) => enemyName),
+}));
+
+const chapterBosses: AreaDefinition[] = [5, 10, 15, 20].map((areaNumber) => ({
+  id: `region-chapter-boss-${areaNumber}`,
+  name: `${REGION_NAMES[areaNumber - 1]} Chapter Boss`,
+  kind: 'boss',
+  unlock: { type: 'complete-area', areaId: `region-area-${areaNumber}`, completions: 2 },
+  encounterTable: [`Chapter Warden ${areaNumber}`],
+  boss: { name: `Chapter Warden ${areaNumber}` },
+  rooms: [
+    { type: 'combat' as const, enemy: { name: `Chapter Warden ${areaNumber}`, health: 90 + areaNumber * 8, attack: 8 + Math.floor(areaNumber / 5), defense: 22 + areaNumber }, experience: 70 + areaNumber * 5, currency: 20 + areaNumber, championChance: 0 },
+    { type: 'empty' as const, durationMilliseconds: 300, healthEffect: 15, manaEffect: 8, experience: 10, currency: 4 },
+  ],
+}));
+
+export const REGION_BOSS_ID = 'region-boss-crown-of-dawn';
+export const REGION_BOSS_ATTEMPT_COST = 120;
+
 export const AREAS: AreaDefinition[] = [
-  { id: FIRST_AREA.id, name: FIRST_AREA.name, kind: 'ordinary', unlock: { type: 'start' }, rooms: FIRST_AREA.rooms, encounterTable: ['Meadow Slime', 'Thornback'] },
+  ...ordinaryAreas,
+  ...chapterBosses,
   {
-    id: 'moonlit-grove', name: 'Moonlit Grove', kind: 'ordinary', unlock: { type: 'complete-area', areaId: FIRST_AREA.id, completions: 1 },
-    encounterTable: ['Grove Stag', 'Moonroot Guardian'],
+    id: REGION_BOSS_ID,
+    name: 'Crown of Dawn Region Boss',
+    kind: 'region-boss',
+    unlock: { type: 'complete-area', areaId: 'region-area-20', completions: 1 },
+    attemptCost: REGION_BOSS_ATTEMPT_COST,
+    encounterTable: ['The Dawn Sovereign'],
+    boss: { name: 'The Dawn Sovereign' },
     rooms: [
-      { type: 'combat', enemy: { name: 'Grove Stag', health: 28, attack: 4, defense: 8 }, experience: 18, currency: 4 },
-      { type: 'empty', durationMilliseconds: 200, healthEffect: 6, manaEffect: 5, experience: 7, currency: 2 },
-      { type: 'combat', enemy: { name: 'Moonroot Guardian', health: 34, attack: 5, defense: 14 }, experience: 24, currency: 5 },
-    ],
-  },
-  {
-    id: 'grove-chapter-boss', name: 'Grove Chapter Boss', kind: 'boss', unlock: { type: 'complete-area', areaId: 'moonlit-grove', completions: 2 },
-    encounterTable: ['Grove Warden'], boss: { name: 'Grove Warden' },
-    rooms: [
-      { type: 'combat', enemy: { name: 'Grove Warden', health: 60, attack: 7, defense: 18 }, experience: 45, currency: 12 },
+      { type: 'combat', enemy: { name: 'The Dawn Sovereign', health: 260, attack: 14, defense: 35 }, experience: 250, currency: 80, championChance: 0 },
+      { type: 'empty', durationMilliseconds: 500, healthEffect: 30, manaEffect: 15, experience: 25, currency: 10 },
+      { type: 'combat', enemy: { name: 'The Dawn Sovereign', health: 320, attack: 16, defense: 40 }, experience: 350, currency: 120, championChance: 0 },
     ],
   },
 ];
