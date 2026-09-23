@@ -1,7 +1,60 @@
 import { describe, expect, it } from 'vitest';
-import { createGame, dispatch, selectTarget } from './simulation';
+import { ITEM_BASES, ITEM_QUALITY_MULTIPLIERS } from './content';
+import { compareItem, createGame, dispatch, equipmentStats, generateItem, selectTarget } from './simulation';
 
 describe('deterministic simulation boundary', () => {
+  it('generates seeded, identified Items with compatible Affixes and authored Exceptional identity', () => {
+    const exceptional = generateItem(7, 0, 0);
+    const repeat = generateItem(7, 0, 0);
+    const generated = generateItem(7, 1, 1);
+
+    expect(exceptional).toEqual(repeat);
+    expect(exceptional).toMatchObject({ name: 'Meadowguard Mail', slot: 'chest', exceptional: true, identified: true });
+    expect(generated.id).not.toBe(exceptional.id);
+    expect(generated.affixes.every((affix) => affix.slot === generated.slot)).toBe(true);
+    expect(Object.keys(ITEM_QUALITY_MULTIPLIERS)).toEqual(['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary']);
+    expect(Object.values(ITEM_BASES).map(({ slot }) => slot)).toEqual(expect.arrayContaining(['weapon', 'helm', 'chest', 'gloves', 'boots', 'ring', 'amulet']));
+    const generatedItems = Array.from({ length: 100 }, (_, seed) => generateItem(seed, 1, 1));
+    expect(new Set(generatedItems.map((item) => item.quality))).toEqual(new Set(Object.keys(ITEM_QUALITY_MULTIPLIERS)));
+    expect(new Set(generatedItems.map((item) => item.slot))).toEqual(new Set(Object.values(ITEM_BASES).map(({ slot }) => slot).filter((slot, index, slots) => slots.indexOf(slot) === index)));
+    expect(generateItem(7, 1, 1).id).not.toBe(generateItem(7, 2, 1).id);
+  });
+
+  it('supports duplicate Items, comparison, and equipping between Expeditions', () => {
+    let game = createGame(7);
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 4_200 });
+    expect(game.inventory).toHaveLength(1);
+    const item = game.inventory[0];
+    game = { ...game, status: 'preparation', inventory: [...game.inventory, { ...item, id: 'duplicate-item' }] };
+    expect(game.inventory.map(({ id }) => id)).toEqual([item.id, 'duplicate-item']);
+    expect(compareItem(item, game.equipment)).toEqual([]);
+    game = dispatch(game, { type: 'EQUIP_ITEM', itemId: item.id });
+
+    expect(game.equipment.chest?.id).toBe(item.id);
+    expect(game.inventory).toHaveLength(1);
+    expect(compareItem(game.inventory[0], game.equipment)).toEqual([item]);
+    expect(equipmentStats(game.equipment).maxHealth).toBeGreaterThan(0);
+  });
+
+  it('applies equipment to the next Expedition but locks equipment during active Combat', () => {
+    let game = createGame(7);
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 4_200 });
+    game = { ...game, status: 'preparation' };
+    const item = game.inventory[0];
+    game = dispatch(game, { type: 'EQUIP_ITEM', itemId: item.id });
+    expect(game.hero.maxHealth).toBeGreaterThan(100);
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    const equippedState = game;
+    expect(equippedState.combat.heroDefense).toBeGreaterThan(10);
+    const activeWithLoot = { ...equippedState, inventory: [generateItem(7, 99, 1)] };
+    const unchanged = dispatch(activeWithLoot, { type: 'EQUIP_ITEM', itemId: activeWithLoot.inventory[0].id });
+    expect(unchanged.equipment).toEqual(activeWithLoot.equipment);
+    expect(unchanged.combat).toEqual(activeWithLoot.combat);
+    expect(unchanged.hero).toEqual(activeWithLoot.hero);
+  });
+
   it('invests in eligible Skills, limits Preparation to four Active Skills, and changes Combat', () => {
     let game = createGame();
     game = { ...game, progression: { ...game.progression, level: 5, skillPoints: 1 } };
@@ -21,7 +74,9 @@ describe('deterministic simulation boundary', () => {
 
     expect(game.combat.heroMana).toBeCloseTo(17.8);
     expect(game.enemy?.health).toBe(8);
-    expect(game.events.some(({ message }) => message.includes('Cleave'))).toBe(true);
+    const cleaveEvent = game.events.find(({ message }) => message.includes('Cleave'));
+    expect(cleaveEvent).toMatchObject({ timestampMilliseconds: 1_400 });
+    expect(game.events.length).toBeGreaterThan(1);
   });
 
   it('rejects unavailable Skills and refunds invested ranks on free Preparation respec', () => {

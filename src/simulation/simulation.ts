@@ -1,5 +1,5 @@
-import { FIRST_AREA, SKILLS } from './content';
-import type { Command, CombatState, Event, ExpeditionOutcome, GameState, ProgressionState, SkillDefinition, StatusEffect, TargetPolicy } from './types';
+import { AFFIXES, EXCEPTIONAL_ITEMS, FIRST_AREA, ITEM_BASES, ITEM_QUALITY_MULTIPLIERS, SKILLS } from './content';
+import type { Command, CombatState, Equipment, EquipmentPosition, EquipmentStats, Event, ExpeditionOutcome, GameState, Item, ItemQuality, ProgressionState, SkillDefinition, StatusEffect, TargetPolicy } from './types';
 
 const SIMULATION_VERSION = 'v1-expedition-loop';
 const TICK_MILLISECONDS = 100;
@@ -13,6 +13,66 @@ const MAX_LEVEL = 100;
 const XP_PER_LEVEL = 100;
 const LEVEL_REWARDS = { attributePoints: 2, skillPoints: 1 };
 const STARTER_ACTIVE_SKILLS = ['physical-strike', 'tank-guard', 'general-challenge', 'magic-bolt'];
+
+const emptyEquipment = (): Equipment => ({ weapon: null, helm: null, chest: null, gloves: null, boots: null, ring1: null, ring2: null, amulet: null });
+const emptyEquipmentStats = (): EquipmentStats => ({ attack: 0, maxHealth: 0, defense: 0, attackInterval: 0, maxMana: 0 });
+
+export function equipmentStats(equipment: Equipment): EquipmentStats {
+  return Object.values(equipment).filter((item): item is Item => item !== null).reduce((total, item) => {
+    const stats = itemStats(item);
+    return {
+      attack: total.attack + stats.attack,
+      maxHealth: total.maxHealth + stats.maxHealth,
+      defense: total.defense + stats.defense,
+      attackInterval: total.attackInterval + stats.attackInterval,
+      maxMana: total.maxMana + stats.maxMana,
+    };
+  }, emptyEquipmentStats());
+}
+
+export function itemStats(item: Item): EquipmentStats {
+  const stats = { ...emptyEquipmentStats(), ...item.baseStats };
+  for (const affix of item.affixes) stats[affix.stat] += affix.value;
+  return stats;
+}
+
+export function compareItem(item: Item, equipment: Equipment): Item[] {
+  if (item.slot !== 'ring') {
+    const equipped = equipment[item.slot as EquipmentPosition];
+    return equipped ? [equipped] : [];
+  }
+  return [equipment.ring1, equipment.ring2].filter((ring): ring is Item => ring !== null);
+}
+
+function seededValue(seed: number, index: number): number {
+  return Math.abs((seed * 9301 + index * 49297 + 233) % 233280) / 233280;
+}
+
+export function generateItem(seed: number, itemNumber: number, roomIndex: number): Item {
+  if (roomIndex === 0 && itemNumber === 0) return { ...EXCEPTIONAL_ITEMS[0], id: `item-${seed}-${itemNumber}` };
+  const keys = Object.keys(ITEM_BASES);
+  const key = keys[Math.floor(seededValue(seed, itemNumber + roomIndex) * keys.length)];
+  const base = ITEM_BASES[key];
+  const qualities: ItemQuality[] = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'];
+  const quality = qualities[Math.floor(seededValue(seed + roomIndex, itemNumber + 3) * qualities.length)];
+  const multiplier = ITEM_QUALITY_MULTIPLIERS[quality];
+  const scaledBase = Object.fromEntries(Object.entries(base.stats).map(([stat, value]) => [stat, Math.round(value * multiplier)]));
+  const compatibleAffixes = AFFIXES.filter((affix) => affix.slot === base.slot);
+  const selectedAffix = compatibleAffixes[Math.floor(seededValue(seed, itemNumber + 9) * compatibleAffixes.length)];
+  const affixes = compatibleAffixes.length > 0 && quality !== 'Common'
+    ? [{ ...selectedAffix, value: Math.round(selectedAffix.value * multiplier) }]
+    : [];
+  return {
+    id: `item-${seed}-${itemNumber}`,
+    name: `${quality} ${base.name}`,
+    slot: base.slot,
+    quality,
+    identified: true,
+    exceptional: false,
+    baseStats: scaledBase,
+    affixes,
+  };
+}
 
 const emptyProgression = (): ProgressionState => ({
   level: 1,
@@ -30,19 +90,22 @@ const emptyProgression = (): ProgressionState => ({
   },
 });
 
-function event(message: string, id: number): Event { return { id, message }; }
+function event(message: string, id: number, timestampMilliseconds: number): Event {
+  return { id, timestampMilliseconds, message };
+}
 
-function combatFor(enemyAttack = 0, enemyDefense = 0, progression = emptyProgression()): CombatState {
+function combatFor(enemyAttack = 0, enemyDefense = 0, progression = emptyProgression(), equipment = emptyEquipment()): CombatState {
   const focusRank = progression.skillRanks['magic-focus'] ?? 0;
+  const itemStats = equipmentStats(equipment);
   return {
     pendingMilliseconds: 0,
     heroAttackProgress: 0,
     enemyAttackProgress: 0,
     heroMana: 20,
-    maxMana: HERO_MAX_MANA + progression.attributes.focus * 5 + focusRank * 2,
+    maxMana: HERO_MAX_MANA + progression.attributes.focus * 5 + focusRank * 2 + itemStats.maxMana,
     heroManaRegeneration: HERO_MANA_REGENERATION + progression.attributes.focus * 0.2,
     heroHealthRegeneration: HERO_HEALTH_REGENERATION + progression.attributes.vitality * 0.1,
-    heroDefense: 10 + progression.attributes.vitality * 0.5,
+    heroDefense: 10 + progression.attributes.vitality * 0.5 + itemStats.defense,
     enemyAttack,
     enemyDefense,
     heroCooldowns: {},
@@ -52,12 +115,13 @@ function combatFor(enemyAttack = 0, enemyDefense = 0, progression = emptyProgres
   };
 }
 
-function derivedHero(progression: ProgressionState) {
+function derivedHero(progression: ProgressionState, equipment = emptyEquipment()) {
   const passiveRank = (id: string) => progression.skillRanks[id] ?? 0;
+  const itemStats = equipmentStats(equipment);
   return {
-    attack: 8 + progression.attributes.might * 2,
-    maxHealth: 100 + progression.attributes.vitality * 10 + passiveRank('tank-fortitude') * 3,
-    attackInterval: Math.max(1_000, HERO_ATTACK_INTERVAL * (1 - Math.min(0.5, progression.attributes.agility * 0.005 + passiveRank('general-quickness') * 0.005 + passiveRank('physical-tempo') * 0.003))),
+    attack: 8 + progression.attributes.might * 2 + itemStats.attack,
+    maxHealth: 100 + progression.attributes.vitality * 10 + passiveRank('tank-fortitude') * 3 + itemStats.maxHealth,
+    attackInterval: Math.max(1_000, HERO_ATTACK_INTERVAL * (1 - Math.min(0.5, progression.attributes.agility * 0.005 + passiveRank('general-quickness') * 0.005 + passiveRank('physical-tempo') * 0.003)) + itemStats.attackInterval),
   };
 }
 
@@ -79,6 +143,7 @@ export function calculateMitigatedDamage(rawDamage: number, mitigation: number):
 export function createGame(seed = 1, options: { startingHealth?: number; enemyAttack?: number } = {}): GameState {
   const room = FIRST_AREA.rooms[0];
   const progression = emptyProgression();
+  const equipment = emptyEquipment();
   return {
     simulationVersion: SIMULATION_VERSION,
     seed,
@@ -88,17 +153,20 @@ export function createGame(seed = 1, options: { startingHealth?: number; enemyAt
     roomCount: FIRST_AREA.rooms.length,
     roomIndex: 0,
     roomType: room.type,
-    hero: { name: 'Ari', health: options.startingHealth ?? 100, ...derivedHero(progression) },
+    hero: { name: 'Ari', health: options.startingHealth ?? 100, ...derivedHero(progression, equipment) },
     enemy: room.type === 'combat' ? { name: room.enemy.name, health: room.enemy.health, maxHealth: room.enemy.health } : null,
     committed: { experience: 0, currency: 0 },
     recoveryRemainingMilliseconds: 0,
     autoRepeat: true,
     outcome: null,
-    events: [event('A new Hero is ready in Sunlit Meadow.', 0)],
+    events: [event('A new Hero is ready in Sunlit Meadow.', 0, 0)],
     progression,
     skills: SKILLS,
     reviewQueue: [],
-    combat: combatFor(room.type === 'combat' ? options.enemyAttack ?? room.enemy.attack : 0, 0, progression),
+    combat: combatFor(room.type === 'combat' ? options.enemyAttack ?? room.enemy.attack : 0, 0, progression, equipment),
+    equipment,
+    inventory: [],
+    nextItemId: 0,
   };
 }
 
@@ -127,7 +195,7 @@ export function selectTarget<T extends { health: number; name: string }>(targets
 
 function addEvent(state: GameState, message: string): GameState {
   const nextId = (state.events.at(-1)?.id ?? -1) + 1;
-  return { ...state, events: [...state.events.slice(-5), event(message, nextId)] };
+  return { ...state, events: [...state.events, event(message, nextId, state.elapsedMilliseconds)].slice(-100) };
 }
 
 function withCombat(state: GameState, combat: Partial<CombatState>): GameState {
@@ -135,7 +203,8 @@ function withCombat(state: GameState, combat: Partial<CombatState>): GameState {
 }
 
 function refreshProgressionPresentation(state: GameState, levelMessages?: string[]): GameState {
-  const heroStats = derivedHero(state.progression);
+  const heroStats = derivedHero(state.progression, state.equipment);
+  const itemStats = equipmentStats(state.equipment);
   const aura = state.progression.preparation.auraId ? skillById(state, state.progression.preparation.auraId) : undefined;
   const auraMultiplier = aura?.id === 'general-focus' || aura?.id === 'magic-aura' ? 1.1 : 1;
   const maxHealthDelta = heroStats.maxHealth - state.hero.maxHealth;
@@ -148,10 +217,10 @@ function refreshProgressionPresentation(state: GameState, levelMessages?: string
     },
     combat: {
       ...state.combat,
-      maxMana: HERO_MAX_MANA + state.progression.attributes.focus * 5 + (state.progression.skillRanks['magic-focus'] ?? 0) * 2,
+      maxMana: HERO_MAX_MANA + state.progression.attributes.focus * 5 + (state.progression.skillRanks['magic-focus'] ?? 0) * 2 + itemStats.maxMana,
       heroManaRegeneration: (HERO_MANA_REGENERATION + state.progression.attributes.focus * 0.2) * auraMultiplier,
       heroHealthRegeneration: (HERO_HEALTH_REGENERATION + state.progression.attributes.vitality * 0.1) * auraMultiplier,
-      heroDefense: 10 + state.progression.attributes.vitality * 0.5,
+      heroDefense: 10 + state.progression.attributes.vitality * 0.5 + itemStats.defense,
       targetPolicy: state.progression.preparation.targetPolicy,
     },
     reviewQueue: reviewQueue(state, levelMessages),
@@ -167,7 +236,7 @@ function enterRoom(state: GameState, roomIndex: number): GameState {
     roomIndex,
     roomType: room.type,
     enemy,
-    combat: combatFor(room.type === 'combat' ? room.enemy.attack : 0, room.type === 'combat' ? room.enemy.defense : 0, state.progression),
+    combat: combatFor(room.type === 'combat' ? room.enemy.attack : 0, room.type === 'combat' ? room.enemy.defense : 0, state.progression, state.equipment),
   };
 }
 
@@ -201,9 +270,12 @@ function beginRecovery(state: GameState): GameState {
 
 function commitRoom(state: GameState): GameState {
   const room = FIRST_AREA.rooms[state.roomIndex];
+  const newItem = generateItem(state.seed, state.nextItemId, state.roomIndex);
   let next = {
     ...state,
     committed: { experience: state.committed.experience + room.experience, currency: state.committed.currency + room.currency },
+    inventory: [...state.inventory, newItem],
+    nextItemId: state.nextItemId + 1,
   };
   const progression = { ...next.progression, experience: next.progression.experience + room.experience };
   const levelMessages = next.reviewQueue.filter((message) => message.startsWith('Level '));
@@ -274,11 +346,15 @@ function advance(state: GameState, milliseconds: number): GameState {
   if (milliseconds <= 0) return state;
   if (state.status === 'recovery') return advanceRecovery(state, milliseconds);
   if (state.status !== 'active') return state;
-  let next = { ...state, elapsedMilliseconds: state.elapsedMilliseconds + milliseconds };
+  const startElapsedMilliseconds = state.elapsedMilliseconds;
+  let next = { ...state, elapsedMilliseconds: startElapsedMilliseconds };
   let remaining = milliseconds + next.combat.pendingMilliseconds;
   next = withCombat(next, { pendingMilliseconds: 0 });
   while (remaining >= TICK_MILLISECONDS && next.status === 'active') {
     remaining -= TICK_MILLISECONDS;
+    // Set the clock to the point at which this tick occurred so events emitted
+    // during the tick get their actual in-simulation timestamp.
+    next = { ...next, elapsedMilliseconds: startElapsedMilliseconds + milliseconds - remaining };
     if (next.roomType === 'empty') {
       const room = FIRST_AREA.rooms[next.roomIndex];
       if (room.type !== 'empty') return next;
@@ -310,7 +386,7 @@ function advance(state: GameState, milliseconds: number): GameState {
   }
   if (next.status === 'active') next = withCombat(next, { pendingMilliseconds: remaining });
   else next = withCombat(next, { pendingMilliseconds: 0 });
-  return next;
+  return { ...next, elapsedMilliseconds: startElapsedMilliseconds + milliseconds };
 }
 
 function restartExpedition(state: GameState, message: string): GameState {
@@ -328,6 +404,23 @@ function withPreparation(state: GameState, preparation: ProgressionState['prepar
   return refreshProgressionPresentation({
     ...state,
     progression: { ...state.progression, preparation },
+  });
+}
+
+function equipItem(state: GameState, itemId: string, requestedSlot?: EquipmentPosition): GameState {
+  const item = state.inventory.find((candidate) => candidate.id === itemId);
+  if (!item) return state;
+  const position: EquipmentPosition = item.slot === 'ring'
+    ? requestedSlot === 'ring1' || requestedSlot === 'ring2' ? requestedSlot : state.equipment.ring1 ? 'ring2' : 'ring1'
+    : item.slot;
+  if ((position === 'ring1' || position === 'ring2') && item.slot !== 'ring') return state;
+  const previous = state.equipment[position];
+  const inventory = state.inventory.filter((candidate) => candidate.id !== itemId);
+  if (previous) inventory.push(previous);
+  return refreshProgressionPresentation({
+    ...state,
+    equipment: { ...state.equipment, [position]: item },
+    inventory,
   });
 }
 
@@ -418,5 +511,6 @@ export function dispatch(state: GameState, command: Command): GameState {
     if (!skill || !state.progression.preparation.activeSkillIds.includes(skill.id)) return state;
     return withPreparation(state, { ...state.progression.preparation, skillTargetPolicies: { ...state.progression.preparation.skillTargetPolicies, [skill.id]: command.policy } });
   }
+  if (command.type === 'EQUIP_ITEM' && state.status === 'preparation') return equipItem(state, command.itemId, command.equipmentSlot);
   return state;
 }

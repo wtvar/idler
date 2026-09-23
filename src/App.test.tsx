@@ -41,4 +41,17 @@ describe('playable browser shell', () => {
     await user.click(advance);
     expect(screen.getByText('Level 1 · 60 XP')).toBeInTheDocument();
   });
+
+  it('lets the player inspect and equip a found Item between Expeditions', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Simulate 5 minutes' }));
+    await user.click(screen.getByRole('button', { name: 'Withdraw' }));
+    await user.click(screen.getByRole('button', { name: /Meadowguard Mail/ }));
+
+    expect(screen.getByRole('heading', { name: /Meadowguard Mail/ })).toBeInTheDocument();
+    expect(screen.getByText(/Compared with: nothing equipped/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Equip' }));
+    expect(screen.getByText(/17 Defense/)).toBeInTheDocument();
+  });
 });

@@ -12,7 +12,8 @@ export type Command =
   | { type: 'SELECT_AURA'; skillId: string | null }
   | { type: 'SELECT_ULTIMATE'; skillId: string | null }
   | { type: 'SET_TARGET_POLICY'; policy: TargetPolicy }
-  | { type: 'SET_SKILL_TARGET_POLICY'; skillId: string; policy: TargetPolicy };
+  | { type: 'SET_SKILL_TARGET_POLICY'; skillId: string; policy: TargetPolicy }
+  | { type: 'EQUIP_ITEM'; itemId: string; equipmentSlot?: EquipmentPosition };
 
 export type SkillTree = 'physical' | 'tank' | 'magic' | 'general';
 export type SkillKind = 'active' | 'passive' | 'aura' | 'ultimate' | 'mastery';
@@ -43,6 +44,23 @@ export type Preparation = {
 
 export type Attribute = 'might' | 'vitality' | 'agility' | 'focus';
 
+export type EquipmentSlot = 'weapon' | 'helm' | 'chest' | 'gloves' | 'boots' | 'ring' | 'amulet';
+export type EquipmentPosition = Exclude<EquipmentSlot, 'ring'> | 'ring1' | 'ring2';
+export type ItemQuality = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary';
+export type EquipmentStats = { attack: number; maxHealth: number; defense: number; attackInterval: number; maxMana: number };
+export type Affix = { id: string; name: string; slot: EquipmentSlot; stat: keyof EquipmentStats; value: number };
+export type Item = {
+  id: string;
+  name: string;
+  slot: EquipmentSlot;
+  quality: ItemQuality;
+  identified: true;
+  exceptional: boolean;
+  baseStats: Partial<EquipmentStats>;
+  affixes: Affix[];
+};
+export type Equipment = Record<EquipmentPosition, Item | null>;
+
 export type ProgressionState = {
   level: number;
   experience: number;
@@ -53,7 +71,7 @@ export type ProgressionState = {
   preparation: Preparation;
 };
 
-export type Event = { id: number; message: string };
+export type Event = { id: number; timestampMilliseconds: number; message: string };
 
 export type StatusEffect = {
   name: 'bleed' | 'burn' | 'slow' | 'stun';
@@ -107,4 +125,7 @@ export type GameState = {
   skills: SkillDefinition[];
   reviewQueue: string[];
   combat: CombatState;
+  equipment: Equipment;
+  inventory: Item[];
+  nextItemId: number;
 };

@@ -1,4 +1,4 @@
-import type { SkillDefinition } from './types';
+import type { Affix, EquipmentStats, Item, SkillDefinition } from './types';
 
 export const FIRST_AREA = {
   name: 'Sunlit Meadow',
@@ -26,4 +26,40 @@ export const SKILLS: SkillDefinition[] = [
   { id: 'general-challenge', name: 'Challenge', tree: 'general', kind: 'active', unlockLevel: 1, prerequisites: [], maxRank: 20, manaCost: 0, cooldownMilliseconds: 0, description: 'A dependable opening attack.', damageMultiplier: 1 },
   { id: 'general-focus', name: 'Battle Focus', tree: 'general', kind: 'aura', unlockLevel: 1, prerequisites: [], maxRank: 1, manaCost: 0, cooldownMilliseconds: 0, description: 'The selected Aura improves Health and Mana regeneration.' },
   { id: 'general-mastery', name: 'Adaptive Mastery', tree: 'general', kind: 'mastery', unlockLevel: 30, prerequisites: ['general-quickness'], maxRank: 1, manaCost: 0, cooldownMilliseconds: 0, description: 'A late Build specialisation.' },
+];
+
+export const ITEM_QUALITY_MULTIPLIERS = {
+  Common: 1,
+  Uncommon: 1.2,
+  Rare: 1.45,
+  Epic: 1.75,
+  Legendary: 2.1,
+} as const;
+
+export const EXCEPTIONAL_ITEMS: Item[] = [
+  {
+    id: 'exceptional-meadowguard-mail', name: 'Meadowguard Mail', slot: 'chest', quality: 'Rare', identified: true,
+    exceptional: true, baseStats: { maxHealth: 18, defense: 4 },
+    affixes: [{ id: 'thornbound', name: 'Thornbound', slot: 'chest', stat: 'defense', value: 3 }],
+  },
+];
+
+export const ITEM_BASES: Record<string, { name: string; slot: Item['slot']; stats: Partial<EquipmentStats> }> = {
+  'iron-sword': { name: 'Iron Sword', slot: 'weapon', stats: { attack: 4 } },
+  'linen-helm': { name: 'Linen Helm', slot: 'helm', stats: { maxHealth: 8 } },
+  'woven-vest': { name: 'Woven Vest', slot: 'chest', stats: { maxHealth: 12 } },
+  'leather-gloves': { name: 'Leather Gloves', slot: 'gloves', stats: { attack: 1 } },
+  'trail-boots': { name: 'Trail Boots', slot: 'boots', stats: { attackInterval: -45 } },
+  'copper-ring': { name: 'Copper Ring', slot: 'ring', stats: { attack: 2 } },
+  'moon-amulet': { name: 'Moon Amulet', slot: 'amulet', stats: { maxMana: 5 } },
+};
+
+export const AFFIXES: Affix[] = [
+  { id: 'might', name: 'of Might', slot: 'weapon', stat: 'attack', value: 2 },
+  { id: 'guarding', name: 'of Guarding', slot: 'helm', stat: 'defense', value: 2 },
+  { id: 'grip', name: 'of Grip', slot: 'gloves', stat: 'attack', value: 1 },
+  { id: 'vitality', name: 'of Vitality', slot: 'chest', stat: 'maxHealth', value: 10 },
+  { id: 'swiftness', name: 'of Swiftness', slot: 'boots', stat: 'attackInterval', value: -35 },
+  { id: 'focus', name: 'of Focus', slot: 'ring', stat: 'maxMana', value: 4 },
+  { id: 'clarity', name: 'of Clarity', slot: 'amulet', stat: 'maxMana', value: 6 },
 ];

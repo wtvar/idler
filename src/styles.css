@@ -35,5 +35,13 @@ select { border: 1px solid #b7b5aa; border-radius: 8px; background: #fffdf8; pad
 button { border: 0; border-radius: 10px; background: #214c35; color: white; cursor: pointer; font: inherit; font-weight: 700; padding: 13px 18px; }
 button.secondary { background: transparent; border: 1px solid #b7b5aa; color: #405048; }
 button:disabled { cursor: not-allowed; opacity: .45; }
-.log p { border-top: 1px solid #e6e3da; padding-top: 10px; margin: 10px 0 0; }
+.log-entries { max-height: 320px; overflow-y: auto; margin-top: 8px; padding-right: 8px; }
+.log p { display: grid; grid-template-columns: 72px 1fr; gap: 12px; border-top: 1px solid #e6e3da; padding-top: 10px; margin: 10px 0 0; }
+.log time { color: #65766d; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.equipment-slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 16px; }
+.equipment-slots p { margin: 0; }
+.item-inspector { background: #f7f2e8; border: 1px solid #ded8ca; border-radius: 10px; margin-top: 16px; padding: 14px; }
+.item-inspector h3 { margin: 0 0 6px; }
+.item-inspector p { margin: 6px 0; }
+.item-actions, .inventory { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 @media (max-width: 640px) { .shell { padding: 32px 0; } .hero-card, .grid { grid-template-columns: 1fr; } .hero-card { gap: 12px; } }
