@@ -17,3 +17,5 @@ Open the local URL Vite prints, usually `http://localhost:5173`. Stop it with `C
 Run checks with `npm test`, or check types with `npm run typecheck`.
 
 Complete a Room to receive identified Items. Inspect and equip them in the Equipment & Loot panel between Expeditions.
+
+Configure Health and Mana Potion thresholds and select one timed Combat buff in the Preparation panel. Potions are used automatically during Combat; the timed buff ends with its Expedition.

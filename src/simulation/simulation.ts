@@ -1,5 +1,5 @@
 import { AFFIXES, EXCEPTIONAL_ITEMS, FIRST_AREA, ITEM_BASES, ITEM_QUALITY_MULTIPLIERS, SKILLS } from './content';
-import type { Command, CombatState, Equipment, EquipmentPosition, EquipmentStats, Event, ExpeditionOutcome, GameState, Item, ItemQuality, ProgressionState, SkillDefinition, StatusEffect, TargetPolicy } from './types';
+import type { Command, CombatState, Consumables, Equipment, EquipmentPosition, EquipmentStats, Event, ExpeditionOutcome, GameState, Item, ItemQuality, PotionKind, PotionSize, ProgressionState, SkillDefinition, StatusEffect, TargetPolicy, TimedBuffKind } from './types';
 
 const SIMULATION_VERSION = 'v1-expedition-loop';
 const TICK_MILLISECONDS = 100;
@@ -14,9 +14,32 @@ export const INVENTORY_CAPACITY = 12;
 const XP_PER_LEVEL = 100;
 const LEVEL_REWARDS = { attributePoints: 2, skillPoints: 1 };
 const STARTER_ACTIVE_SKILLS = ['physical-strike', 'tank-guard', 'general-challenge', 'magic-bolt'];
+const POTION_COOLDOWN_MILLISECONDS = 5_000;
+const POTION_HEALING: Record<PotionSize, number> = { Small: 20, Medium: 40, Large: 70, Greater: 100 };
+const POTION_MANA: Record<PotionSize, number> = { Small: 10, Medium: 20, Large: 35, Greater: 50 };
+const TIMED_BUFF_MULTIPLIERS: Record<TimedBuffKind, number> = {
+  damage: 1.25,
+  'attack-speed': 0.85,
+  'health-regeneration': 2,
+  'mana-regeneration': 2,
+  defense: 1.25,
+};
 
 const emptyEquipment = (): Equipment => ({ weapon: null, helm: null, chest: null, gloves: null, boots: null, ring1: null, ring2: null, amulet: null });
 const emptyEquipmentStats = (): EquipmentStats => ({ attack: 0, maxHealth: 0, defense: 0, attackInterval: 0, maxMana: 0 });
+const initialConsumables = (): Consumables => ({
+  potions: [
+    { kind: 'health', size: 'Small', quantity: 3 },
+    { kind: 'health', size: 'Medium', quantity: 0 },
+    { kind: 'health', size: 'Large', quantity: 0 },
+    { kind: 'health', size: 'Greater', quantity: 0 },
+    { kind: 'mana', size: 'Small', quantity: 3 },
+    { kind: 'mana', size: 'Medium', quantity: 0 },
+    { kind: 'mana', size: 'Large', quantity: 0 },
+    { kind: 'mana', size: 'Greater', quantity: 0 },
+  ],
+  timedBuffs: { damage: 1, 'attack-speed': 1, 'health-regeneration': 1, 'mana-regeneration': 1, defense: 1 },
+});
 
 export function equipmentStats(equipment: Equipment): EquipmentStats {
   return Object.values(equipment).filter((item): item is Item => item !== null).reduce((total, item) => {
@@ -94,6 +117,13 @@ function salvageValue(item: Item): number {
   return QUALITY_RANK[item.quality];
 }
 
+function addPotion(consumables: Consumables, kind: PotionKind, size: PotionSize): Consumables {
+  return {
+    ...consumables,
+    potions: consumables.potions.map((potion) => potion.kind === kind && potion.size === size ? { ...potion, quantity: potion.quantity + 1 } : potion),
+  };
+}
+
 function seededValue(seed: number, index: number): number {
   return Math.abs((seed * 9301 + index * 49297 + 233) % 233280) / 233280;
 }
@@ -137,6 +167,8 @@ const emptyProgression = (): ProgressionState => ({
     ultimateId: null,
     targetPolicy: 'first',
     skillTargetPolicies: {},
+    potions: { health: { size: 'Small', thresholdPercent: 50 }, mana: { size: 'Small', thresholdPercent: 30 } },
+    timedBuff: null,
   },
 });
 
@@ -162,6 +194,9 @@ function combatFor(enemyAttack = 0, enemyDefense = 0, progression = emptyProgres
     heroStatuses: [],
     enemyStatuses: [],
     targetPolicy: progression.preparation.targetPolicy,
+    potionCooldowns: { health: 0, mana: 0 },
+    potionUses: {},
+    timedBuff: null,
   };
 }
 
@@ -173,6 +208,13 @@ function derivedHero(progression: ProgressionState, equipment = emptyEquipment()
     maxHealth: 100 + progression.attributes.vitality * 10 + passiveRank('tank-fortitude') * 3 + itemStats.maxHealth,
     attackInterval: Math.max(1_000, HERO_ATTACK_INTERVAL * (1 - Math.min(0.5, progression.attributes.agility * 0.005 + passiveRank('general-quickness') * 0.005 + passiveRank('physical-tempo') * 0.003)) + itemStats.attackInterval),
   };
+}
+
+function applyTimedBuffToHero(hero: Pick<GameState['hero'], 'attack' | 'maxHealth' | 'attackInterval'>, buff: CombatState['timedBuff']): Pick<GameState['hero'], 'attack' | 'maxHealth' | 'attackInterval'> {
+  if (!buff) return hero;
+  if (buff.kind === 'damage') return { ...hero, attack: Math.round(hero.attack * TIMED_BUFF_MULTIPLIERS.damage) };
+  if (buff.kind === 'attack-speed') return { ...hero, attackInterval: Math.max(1_000, hero.attackInterval * TIMED_BUFF_MULTIPLIERS['attack-speed']) };
+  return hero;
 }
 
 function reviewQueue(state: GameState, levelMessages = state.reviewQueue.filter((message) => message.startsWith('Level '))) {
@@ -218,6 +260,7 @@ export function createGame(seed = 1, options: { startingHealth?: number; enemyAt
     equipment,
     inventory: [],
     nextItemId: 0,
+    consumables: initialConsumables(),
   };
 }
 
@@ -254,7 +297,7 @@ function withCombat(state: GameState, combat: Partial<CombatState>): GameState {
 }
 
 function refreshProgressionPresentation(state: GameState, levelMessages?: string[]): GameState {
-  const heroStats = derivedHero(state.progression, state.equipment);
+  const heroStats = applyTimedBuffToHero(derivedHero(state.progression, state.equipment), state.combat.timedBuff);
   const itemStats = equipmentStats(state.equipment);
   const aura = state.progression.preparation.auraId ? skillById(state, state.progression.preparation.auraId) : undefined;
   const auraMultiplier = aura?.id === 'general-focus' || aura?.id === 'magic-aura' ? 1.1 : 1;
@@ -269,9 +312,9 @@ function refreshProgressionPresentation(state: GameState, levelMessages?: string
     combat: {
       ...state.combat,
       maxMana: HERO_MAX_MANA + state.progression.attributes.focus * 5 + (state.progression.skillRanks['magic-focus'] ?? 0) * 2 + itemStats.maxMana,
-      heroManaRegeneration: (HERO_MANA_REGENERATION + state.progression.attributes.focus * 0.2) * auraMultiplier,
-      heroHealthRegeneration: (HERO_HEALTH_REGENERATION + state.progression.attributes.vitality * 0.1) * auraMultiplier,
-      heroDefense: 10 + state.progression.attributes.vitality * 0.5 + itemStats.defense,
+      heroManaRegeneration: (HERO_MANA_REGENERATION + state.progression.attributes.focus * 0.2) * auraMultiplier * (state.combat.timedBuff?.kind === 'mana-regeneration' ? TIMED_BUFF_MULTIPLIERS['mana-regeneration'] : 1),
+      heroHealthRegeneration: (HERO_HEALTH_REGENERATION + state.progression.attributes.vitality * 0.1) * auraMultiplier * (state.combat.timedBuff?.kind === 'health-regeneration' ? TIMED_BUFF_MULTIPLIERS['health-regeneration'] : 1),
+      heroDefense: (10 + state.progression.attributes.vitality * 0.5 + itemStats.defense) * (state.combat.timedBuff?.kind === 'defense' ? TIMED_BUFF_MULTIPLIERS.defense : 1),
       targetPolicy: state.progression.preparation.targetPolicy,
     },
     reviewQueue: reviewQueue(state, levelMessages),
@@ -282,12 +325,13 @@ function enterRoom(state: GameState, roomIndex: number): GameState {
   const room = FIRST_AREA.rooms[roomIndex];
   if (!room) return { ...state, status: 'completed', roomType: 'complete', enemy: null };
   const enemy = room.type === 'combat' ? { name: room.enemy.name, health: room.enemy.health, maxHealth: room.enemy.health } : null;
+  const roomCombat = combatFor(room.type === 'combat' ? room.enemy.attack : 0, room.type === 'combat' ? room.enemy.defense : 0, state.progression, state.equipment);
   return {
     ...state,
     roomIndex,
     roomType: room.type,
     enemy,
-    combat: combatFor(room.type === 'combat' ? room.enemy.attack : 0, room.type === 'combat' ? room.enemy.defense : 0, state.progression, state.equipment),
+    combat: { ...roomCombat, potionUses: state.combat.potionUses, timedBuff: state.combat.timedBuff },
   };
 }
 
@@ -304,30 +348,35 @@ function outcome(state: GameState, result: ExpeditionOutcome['result'], recovery
     lost: result === 'completed' ? { experience: 0, currency: 0 } : currentRoomLoss(state),
     recoveryMilliseconds,
     willRestart,
+    consumables: { potionsUsed: state.combat.potionUses, timedBuff: state.combat.timedBuff?.kind ?? state.progression.preparation.timedBuff },
   };
 }
 
 function beginRecovery(state: GameState): GameState {
+  const expeditionOutcome = outcome(state, 'defeated', RECOVERY_MILLISECONDS, state.autoRepeat);
   const next = {
     ...state,
     status: 'recovery' as const,
     recoveryRemainingMilliseconds: RECOVERY_MILLISECONDS,
-    outcome: outcome(state, 'defeated', RECOVERY_MILLISECONDS, state.autoRepeat),
+    outcome: expeditionOutcome,
     hero: { ...state.hero, health: 0 },
-    combat: { ...state.combat, pendingMilliseconds: 0 },
+    combat: { ...state.combat, pendingMilliseconds: 0, timedBuff: null },
   };
-  return addEvent(next, 'Ari was defeated. The incomplete Room and its rewards were lost; Recovery begins.');
+  return addEvent(refreshProgressionPresentation(next), 'Ari was defeated. The incomplete Room and its rewards were lost; Recovery begins.');
 }
 
 function commitRoom(state: GameState): GameState {
   const room = FIRST_AREA.rooms[state.roomIndex];
   const newItem = generateItem(state.seed, state.nextItemId, state.roomIndex);
   const lootDecision = acceptLoot(state.inventory, newItem);
+  const potionKind: PotionKind = state.roomIndex % 2 === 0 ? 'health' : 'mana';
+  const potionSize: PotionSize[] = ['Small', 'Medium', 'Large', 'Greater'];
   let next = {
     ...state,
     committed: { experience: state.committed.experience + room.experience, currency: state.committed.currency + room.currency },
     inventory: lootDecision.inventory,
     nextItemId: state.nextItemId + 1,
+    consumables: addPotion(state.consumables, potionKind, potionSize[state.roomIndex % potionSize.length]),
   };
   const progression = { ...next.progression, experience: next.progression.experience + room.experience };
   const levelMessages = next.reviewQueue.filter((message) => message.startsWith('Level '));
@@ -346,6 +395,36 @@ function expireStatuses(statuses: StatusEffect[]): StatusEffect[] {
     .filter((status) => status.remainingMilliseconds > 0);
 }
 
+function consumePotion(state: GameState, kind: PotionKind): GameState {
+  const preparation = state.progression.preparation.potions[kind];
+  if (!preparation || state.combat.potionCooldowns[kind] > 0) return state;
+  const stack = state.consumables.potions.find((potion) => potion.kind === kind && potion.size === preparation.size);
+  if (!stack || stack.quantity <= 0) return state;
+  const amount = kind === 'health' ? POTION_HEALING[stack.size] : POTION_MANA[stack.size];
+  const shouldUse = kind === 'health'
+    ? state.hero.health < state.hero.maxHealth && state.hero.health / state.hero.maxHealth * 100 <= preparation.thresholdPercent
+    : state.combat.heroMana < state.combat.maxMana && state.combat.heroMana / state.combat.maxMana * 100 <= preparation.thresholdPercent;
+  if (!shouldUse) return state;
+  const potions = state.consumables.potions.map((potion) => potion === stack ? { ...potion, quantity: potion.quantity - 1 } : potion);
+  const uses = { ...state.combat.potionUses, [kind]: (state.combat.potionUses[kind] ?? 0) + 1 };
+  const next = {
+    ...state,
+    consumables: { ...state.consumables, potions },
+    hero: kind === 'health' ? { ...state.hero, health: Math.min(state.hero.maxHealth, state.hero.health + amount) } : state.hero,
+    combat: {
+      ...state.combat,
+      heroMana: kind === 'mana' ? Math.min(state.combat.maxMana, state.combat.heroMana + amount) : state.combat.heroMana,
+      potionCooldowns: { ...state.combat.potionCooldowns, [kind]: POTION_COOLDOWN_MILLISECONDS },
+      potionUses: uses,
+    },
+  };
+  return addEvent(next, `Ari uses a ${stack.size} ${kind === 'health' ? 'Health' : 'Mana'} Potion (+${amount}).`);
+}
+
+function usePreparedPotions(state: GameState): GameState {
+  return consumePotion(consumePotion(state, 'health'), 'mana');
+}
+
 function hasStun(statuses: StatusEffect[]): boolean {
   return statuses.some((status) => status.name === 'stun');
 }
@@ -360,9 +439,12 @@ function resolveCombatTick(state: GameState): GameState {
     enemyAttackProgress: state.combat.enemyAttackProgress + TICK_MILLISECONDS,
     heroCooldowns: Object.fromEntries(Object.entries(state.combat.heroCooldowns)
       .map(([name, remaining]) => [name, Math.max(0, remaining - TICK_MILLISECONDS)])),
+    potionCooldowns: Object.fromEntries(Object.entries(state.combat.potionCooldowns)
+      .map(([kind, remaining]) => [kind, Math.max(0, remaining - TICK_MILLISECONDS)])) as CombatState['potionCooldowns'],
   });
   next = { ...next, hero: { ...next.hero, health: Math.min(next.hero.maxHealth, next.hero.health + next.combat.heroHealthRegeneration / 10) } };
   next = withCombat(next, { heroMana: Math.min(next.combat.maxMana, next.combat.heroMana + next.combat.heroManaRegeneration / 10) });
+  next = usePreparedPotions(next);
 
   const heroReady = next.combat.heroAttackProgress >= next.hero.attackInterval && !hasStun(next.combat.heroStatuses);
   const enemyReady = next.combat.enemyAttackProgress >= ENEMY_ATTACK_INTERVAL && !hasStun(next.combat.enemyStatuses);
@@ -429,10 +511,11 @@ function advance(state: GameState, milliseconds: number): GameState {
       }
     }
     if (next.roomType === 'complete') {
-      next = { ...next, outcome: outcome(next, 'completed', 0, false) };
+      const completedOutcome = outcome(next, 'completed', 0, false);
+      next = { ...next, outcome: completedOutcome };
       next = addEvent(next, 'Expedition completed. All Rooms are secured.');
       if (next.autoRepeat) next = restartExpedition(next, 'The selected Area automatically restarts from Room 1.');
-      else next = { ...next, status: 'preparation' as const };
+      else next = endExpeditionInPreparation(next, completedOutcome);
       break;
     }
   }
@@ -442,14 +525,27 @@ function advance(state: GameState, milliseconds: number): GameState {
 }
 
 function restartExpedition(state: GameState, message: string): GameState {
+  const selectedBuff = state.progression.preparation.timedBuff;
+  const canUseBuff = selectedBuff !== null && state.consumables.timedBuffs[selectedBuff] > 0;
   const fresh = enterRoom({
     ...state,
     status: 'active',
     committed: { experience: 0, currency: 0 },
     recoveryRemainingMilliseconds: 0,
     hero: { ...state.hero, health: state.hero.maxHealth },
+    consumables: canUseBuff ? { ...state.consumables, timedBuffs: { ...state.consumables.timedBuffs, [selectedBuff]: state.consumables.timedBuffs[selectedBuff] - 1 } } : state.consumables,
+    combat: { ...state.combat, potionCooldowns: { health: 0, mana: 0 }, potionUses: {}, timedBuff: canUseBuff ? { kind: selectedBuff, remainingMilliseconds: 0 } : null },
   }, 0);
   return addEvent(refreshProgressionPresentation(fresh), message);
+}
+
+function endExpeditionInPreparation(state: GameState, expeditionOutcome: ExpeditionOutcome): GameState {
+  return refreshProgressionPresentation({
+    ...state,
+    status: 'preparation',
+    outcome: expeditionOutcome,
+    combat: { ...state.combat, timedBuff: null, pendingMilliseconds: 0 },
+  });
 }
 
 function withPreparation(state: GameState, preparation: ProgressionState['preparation']): GameState {
@@ -498,16 +594,26 @@ function advanceRecovery(state: GameState, milliseconds: number): GameState {
   if (remaining > 0) return { ...state, elapsedMilliseconds: state.elapsedMilliseconds + milliseconds, recoveryRemainingMilliseconds: remaining };
   const recovered = { ...state, elapsedMilliseconds: state.elapsedMilliseconds + milliseconds, recoveryRemainingMilliseconds: 0 };
   if (state.autoRepeat) return restartExpedition(recovered, 'Recovery complete. The selected Area automatically restarts from Room 1.');
-  return addEvent({ ...recovered, status: 'preparation', hero: { ...recovered.hero, health: recovered.hero.maxHealth } }, 'Recovery complete. Automatic repeat is stopped; the Area is ready for Preparation.');
+  return addEvent(refreshProgressionPresentation({ ...recovered, status: 'preparation', hero: { ...recovered.hero, health: recovered.hero.maxHealth } }), 'Recovery complete. Automatic repeat is stopped; the Area is ready for Preparation.');
 }
 
 export function dispatch(state: GameState, command: Command): GameState {
   if (command.type === 'START_EXPEDITION' && state.status === 'preparation' && state.progression.preparation.activeSkillIds.length === 4) {
-    return addEvent(refreshProgressionPresentation({ ...state, status: 'active', autoRepeat: true, outcome: null }), 'Expedition started. Preparation is locked.');
+    const selectedBuff = state.progression.preparation.timedBuff;
+    const canUseBuff = selectedBuff !== null && state.consumables.timedBuffs[selectedBuff] > 0;
+    return addEvent(refreshProgressionPresentation({
+      ...state,
+      status: 'active',
+      autoRepeat: true,
+      outcome: null,
+      consumables: canUseBuff ? { ...state.consumables, timedBuffs: { ...state.consumables.timedBuffs, [selectedBuff]: state.consumables.timedBuffs[selectedBuff] - 1 } } : state.consumables,
+      combat: { ...state.combat, potionCooldowns: { health: 0, mana: 0 }, potionUses: {}, timedBuff: canUseBuff ? { kind: selectedBuff, remainingMilliseconds: 0 } : null },
+    }), 'Expedition started. Preparation is locked.');
   }
   if (command.type === 'ADVANCE_TIME') return advance(state, command.milliseconds);
   if (command.type === 'WITHDRAW' && state.status === 'active') {
-    const next = { ...state, status: 'preparation' as const, autoRepeat: false, outcome: outcome(state, 'withdrawn', 0, false) };
+    const withdrawnOutcome = outcome(state, 'withdrawn', 0, false);
+    const next = endExpeditionInPreparation({ ...state, autoRepeat: false }, withdrawnOutcome);
     return addEvent(next, 'Expedition withdrawn. Committed progress is retained; incomplete Room rewards were lost. Preparation is available.');
   }
   if (command.type === 'STOP_AUTO_REPEAT' && (state.status === 'active' || state.status === 'recovery')) {
@@ -574,6 +680,16 @@ export function dispatch(state: GameState, command: Command): GameState {
     const skill = skillById(state, command.skillId);
     if (!skill || !state.progression.preparation.activeSkillIds.includes(skill.id)) return state;
     return withPreparation(state, { ...state.progression.preparation, skillTargetPolicies: { ...state.progression.preparation.skillTargetPolicies, [skill.id]: command.policy } });
+  }
+  if (command.type === 'SET_POTION_PREPARATION' && state.status === 'preparation' && command.thresholdPercent >= 0 && command.thresholdPercent <= 100) {
+    return withPreparation(state, {
+      ...state.progression.preparation,
+      potions: { ...state.progression.preparation.potions, [command.potion]: { size: command.size, thresholdPercent: command.thresholdPercent } },
+    });
+  }
+  if (command.type === 'SELECT_TIMED_BUFF' && state.status === 'preparation') {
+    if (command.buff !== null && state.consumables.timedBuffs[command.buff] <= 0) return state;
+    return withPreparation(state, { ...state.progression.preparation, timedBuff: command.buff });
   }
   if (command.type === 'EQUIP_ITEM' && state.status === 'preparation') return equipItem(state, command.itemId, command.equipmentSlot);
   if (command.type === 'SALVAGE_ITEM' && state.status === 'preparation') return salvageItem(state, command.itemId);

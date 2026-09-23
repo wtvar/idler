@@ -4,6 +4,76 @@ import { acceptLoot, availableInventorySpace, compareItem, createGame, dispatch,
 import type { GameState } from './types';
 
 describe('deterministic simulation boundary', () => {
+  it('keeps Potion sizes stackable and consumes Health Potions at the configured threshold', () => {
+    let game = createGame();
+    expect(game.consumables.potions).toContainEqual({ kind: 'health', size: 'Small', quantity: 3 });
+    game = dispatch(game, { type: 'SET_POTION_PREPARATION', potion: 'health', size: 'Small', thresholdPercent: 80 });
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    game = { ...game, hero: { ...game.hero, health: 50 } };
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });
+
+    expect(game.hero.health).toBeGreaterThan(50);
+    expect(game.consumables.potions.find((potion) => potion.kind === 'health' && potion.size === 'Small')?.quantity).toBe(2);
+    expect(game.events.at(-1)?.message).toContain('Small Health Potion');
+  });
+
+  it('does not use Potions without stock and gives Health and Mana separate cooldowns', () => {
+    let game = createGame();
+    game = {
+      ...game,
+      consumables: { ...game.consumables, potions: game.consumables.potions.map((potion) => ({ ...potion, quantity: 0 })) },
+      hero: { ...game.hero, health: 1 },
+    };
+    game = dispatch(game, { type: 'SET_POTION_PREPARATION', potion: 'health', size: 'Small', thresholdPercent: 100 });
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });
+    expect(game.hero.health).toBeCloseTo(1.1);
+    expect(game.combat.potionCooldowns.health).toBe(0);
+
+    game = createGame();
+    game = dispatch(game, { type: 'SET_POTION_PREPARATION', potion: 'health', size: 'Small', thresholdPercent: 100 });
+    game = dispatch(game, { type: 'SET_POTION_PREPARATION', potion: 'mana', size: 'Small', thresholdPercent: 100 });
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    game = { ...game, hero: { ...game.hero, health: 1 }, combat: { ...game.combat, heroMana: 0 } };
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });
+    expect(game.combat.potionCooldowns.health).toBeGreaterThan(0);
+    expect(game.combat.potionCooldowns.mana).toBeGreaterThan(0);
+    expect(game.events.filter(({ message }) => message.includes('Potion')).length).toBe(2);
+  });
+
+  it('applies one selected timed Combat buff only within its Expedition', () => {
+    let game = createGame();
+    const attackBefore = game.hero.attack;
+    game = dispatch(game, { type: 'SELECT_TIMED_BUFF', buff: 'damage' });
+    expect(game.progression.preparation.timedBuff).toBe('damage');
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    expect(game.hero.attack).toBeGreaterThan(attackBefore);
+    expect(game.combat.timedBuff).toMatchObject({ kind: 'damage' });
+    game = dispatch(game, { type: 'WITHDRAW' });
+    expect(game.status).toBe('preparation');
+    expect(game.progression.preparation.timedBuff).toBe('damage');
+    expect(game.combat.timedBuff).toBeNull();
+    expect(game.hero.attack).toBe(attackBefore);
+    expect(game.outcome?.consumables.timedBuff).toBe('damage');
+  });
+
+  it('clears timed buffs at both completion and defeat while retaining their outcome summary', () => {
+    let completed = dispatch(createGame(), { type: 'SELECT_TIMED_BUFF', buff: 'defense' });
+    completed = dispatch(completed, { type: 'START_EXPEDITION' });
+    completed = dispatch(completed, { type: 'STOP_AUTO_REPEAT' });
+    completed = dispatch(completed, { type: 'ADVANCE_TIME', milliseconds: 9_900 });
+    expect(completed.outcome?.result).toBe('completed');
+    expect(completed.combat.timedBuff).toBeNull();
+    expect(completed.outcome?.consumables.timedBuff).toBe('defense');
+
+    let defeated = dispatch(createGame(7, { startingHealth: 1, enemyAttack: 100 }), { type: 'SELECT_TIMED_BUFF', buff: 'health-regeneration' });
+    defeated = dispatch(defeated, { type: 'START_EXPEDITION' });
+    defeated = dispatch(defeated, { type: 'ADVANCE_TIME', milliseconds: 1_500 });
+    expect(defeated.status).toBe('recovery');
+    expect(defeated.combat.timedBuff).toBeNull();
+    expect(defeated.outcome?.consumables.timedBuff).toBe('health-regeneration');
+  });
+
   it('generates seeded, identified Items with compatible Affixes and authored Exceptional identity', () => {
     const exceptional = generateItem(7, 0, 0);
     const repeat = generateItem(7, 0, 0);

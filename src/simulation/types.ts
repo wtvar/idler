@@ -13,12 +13,20 @@ export type Command =
   | { type: 'SELECT_ULTIMATE'; skillId: string | null }
   | { type: 'SET_TARGET_POLICY'; policy: TargetPolicy }
   | { type: 'SET_SKILL_TARGET_POLICY'; skillId: string; policy: TargetPolicy }
+  | { type: 'SET_POTION_PREPARATION'; potion: PotionKind; size: PotionSize; thresholdPercent: number }
+  | { type: 'SELECT_TIMED_BUFF'; buff: TimedBuffKind | null }
   | { type: 'EQUIP_ITEM'; itemId: string; equipmentSlot?: EquipmentPosition }
   | { type: 'SALVAGE_ITEM'; itemId: string };
 
 export type SkillTree = 'physical' | 'tank' | 'magic' | 'general';
 export type SkillKind = 'active' | 'passive' | 'aura' | 'ultimate' | 'mastery';
 export type TargetPolicy = 'first' | 'last' | 'lowest-health' | 'highest-health' | 'boss-champion-first';
+export type PotionKind = 'health' | 'mana';
+export type PotionSize = 'Small' | 'Medium' | 'Large' | 'Greater';
+export type TimedBuffKind = 'damage' | 'attack-speed' | 'health-regeneration' | 'mana-regeneration' | 'defense';
+export type PotionStack = { kind: PotionKind; size: PotionSize; quantity: number };
+export type PotionPreparation = { size: PotionSize; thresholdPercent: number } | null;
+export type Consumables = { potions: PotionStack[]; timedBuffs: Record<TimedBuffKind, number> };
 
 export type SkillDefinition = {
   id: string;
@@ -41,6 +49,8 @@ export type Preparation = {
   ultimateId: string | null;
   targetPolicy: TargetPolicy;
   skillTargetPolicies: Record<string, TargetPolicy>;
+  potions: { health: PotionPreparation; mana: PotionPreparation };
+  timedBuff: TimedBuffKind | null;
 };
 
 export type Attribute = 'might' | 'vitality' | 'agility' | 'focus';
@@ -95,6 +105,9 @@ export type CombatState = {
   heroStatuses: StatusEffect[];
   enemyStatuses: StatusEffect[];
   targetPolicy: TargetPolicy;
+  potionCooldowns: Record<PotionKind, number>;
+  potionUses: Partial<Record<PotionKind, number>>;
+  timedBuff: { kind: TimedBuffKind; remainingMilliseconds: number } | null;
 };
 
 export type ExpeditionOutcome = {
@@ -104,6 +117,7 @@ export type ExpeditionOutcome = {
   lost: { experience: number; currency: number };
   recoveryMilliseconds: number;
   willRestart: boolean;
+  consumables: { potionsUsed: Partial<Record<PotionKind, number>>; timedBuff: TimedBuffKind | null };
 };
 
 export type GameState = {
@@ -130,4 +144,5 @@ export type GameState = {
   equipment: Equipment;
   inventory: Item[];
   nextItemId: number;
+  consumables: Consumables;
 };
