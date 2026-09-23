@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { createGame, dispatch } from './simulation/simulation';
-import type { Command, GameState } from './simulation/types';
+import { createGame, dispatch, isSkillEligible } from './simulation/simulation';
+import type { Command, GameState, SkillDefinition, SkillKind, TargetPolicy } from './simulation/types';
 import './styles.css';
 
 export function App() {
@@ -13,8 +13,19 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [game.status]);
 
-  const canStart = game.status === 'preparation';
+  const canStart = game.status === 'preparation' && game.progression.preparation.activeSkillIds.length === 4;
   const progress = game.roomType === 'complete' ? game.roomCount : game.roomIndex;
+  const skillGroups: SkillKind[] = ['active', 'passive', 'aura', 'ultimate', 'mastery'];
+  const skillButton = (skill: SkillDefinition) => {
+    const rank = game.progression.skillRanks[skill.id] ?? 0;
+    const eligible = isSkillEligible(game.progression, skill);
+    const selected = game.progression.preparation.activeSkillIds.includes(skill.id) || game.progression.preparation.auraId === skill.id || game.progression.preparation.ultimateId === skill.id;
+    if (skill.kind === 'active') return <button className="secondary" key={skill.id} onClick={() => send({ type: 'TOGGLE_ACTIVE_SKILL', skillId: skill.id })} disabled={game.status !== 'preparation' || !eligible || rank === 0 || (!selected && game.progression.preparation.activeSkillIds.length >= 4)}>{selected ? 'Remove' : 'Select'} {skill.name} <span>({rank}/{skill.maxRank})</span></button>;
+    if (skill.kind === 'aura') return <button className="secondary" key={skill.id} onClick={() => send({ type: 'SELECT_AURA', skillId: selected ? null : skill.id })} disabled={game.status !== 'preparation' || !eligible || rank === 0}>{game.progression.preparation.auraId === skill.id ? 'Remove' : 'Select'} Aura: {skill.name} <span>({rank}/{skill.maxRank})</span></button>;
+    if (skill.kind === 'ultimate') return <button className="secondary" key={skill.id} onClick={() => send({ type: 'SELECT_ULTIMATE', skillId: selected ? null : skill.id })} disabled={game.status !== 'preparation' || !eligible || rank === 0}>{game.progression.preparation.ultimateId === skill.id ? 'Remove' : 'Select'} Ultimate: {skill.name} <span>({rank}/{skill.maxRank})</span></button>;
+    return <div className="skill-row" key={skill.id}><span>{skill.name} <small>({skill.kind}, rank {rank}/{skill.maxRank})</small></span>{rank < skill.maxRank && <button className="secondary" onClick={() => send({ type: 'INVEST_SKILL', skillId: skill.id })} disabled={game.status !== 'preparation' || !eligible || game.progression.skillPoints === 0}>Invest</button>}</div>;
+  };
+  const policies: TargetPolicy[] = ['first', 'last', 'lowest-health', 'highest-health', 'boss-champion-first'];
   return <main className="shell">
     <header><p className="eyebrow">IDLER · EXPEDITION DASHBOARD</p><h1>{game.areaName}</h1><p className="muted">A quiet place to prepare, then let the Hero work.</p></header>
     <section className="hero-card" aria-label="Hero status">
@@ -29,6 +40,14 @@ export function App() {
       <div className="attribute-controls" aria-label="Attribute decisions">
         {(['might', 'vitality', 'agility', 'focus'] as const).map((attribute) => <button key={attribute} className="secondary" onClick={() => send({ type: 'SPEND_ATTRIBUTE', attribute })} disabled={game.status !== 'preparation' || game.progression.attributePoints === 0}>Spend 1 {attribute[0].toUpperCase() + attribute.slice(1)} <span>({game.progression.attributes[attribute]})</span></button>)}
       </div>
+    </section>
+    <section className="panel preparation" aria-label="Preparation">
+      <span className="label">PREPARATION</span>
+      <h2>Build choices for the next Expedition</h2>
+      <p className="muted">{game.status === 'active' ? 'Build changes are locked during the active Expedition.' : `${game.progression.preparation.activeSkillIds.length}/4 Active Skills selected · ${game.progression.preparation.auraId ? '1' : '0'}/1 Aura · ${game.progression.preparation.ultimateId ? '1' : '0'}/1 Ultimate`}</p>
+      <div className="skill-controls">{skillGroups.map((kind) => <div key={kind}><span className="label">{kind}</span>{game.skills.filter((skill) => skill.kind === kind).map(skillButton)}</div>)}</div>
+      <label className="target-policy">Target policy <select aria-label="Target policy" value={game.progression.preparation.targetPolicy} onChange={(event) => send({ type: 'SET_TARGET_POLICY', policy: event.target.value as TargetPolicy })} disabled={game.status !== 'preparation'}>{policies.map((policy) => <option key={policy} value={policy}>{policy}</option>)}</select></label>
+      <button className="secondary" onClick={() => send({ type: 'RESPEC_SKILLS' })} disabled={game.status !== 'preparation'}>Free Respec</button>
     </section>
     <section className="grid">
       <article className="panel"><span className="label">EXPEDITION</span><h2>Room {Math.min(progress + 1, game.roomCount)} of {game.roomCount}</h2><p>{game.roomType === 'combat' && game.enemy ? `${game.enemy.name}: ${Math.max(0, game.enemy.health)}/${game.enemy.maxHealth} health` : game.roomType === 'empty' ? 'Empty Room · resolving its effect' : 'Every Room is secured.'}</p><div className="room-track" aria-label={`Room ${progress} of ${game.roomCount}`}><span style={{ width: `${progress / game.roomCount * 100}%` }} /></div></article>

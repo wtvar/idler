@@ -1,7 +1,60 @@
 import { describe, expect, it } from 'vitest';
-import { createGame, dispatch } from './simulation';
+import { createGame, dispatch, selectTarget } from './simulation';
 
 describe('deterministic simulation boundary', () => {
+  it('invests in eligible Skills, limits Preparation to four Active Skills, and changes Combat', () => {
+    let game = createGame();
+    game = { ...game, progression: { ...game.progression, level: 5, skillPoints: 1 } };
+    game = dispatch(game, { type: 'INVEST_SKILL', skillId: 'physical-cleave' });
+    expect(game.progression.skillRanks['physical-cleave']).toBe(1);
+
+    for (const skillId of ['physical-strike', 'tank-guard', 'general-challenge', 'magic-bolt']) {
+      game = dispatch(game, { type: 'TOGGLE_ACTIVE_SKILL', skillId });
+    }
+    game = dispatch(game, { type: 'TOGGLE_ACTIVE_SKILL', skillId: 'physical-cleave' });
+    for (const skillId of ['tank-guard', 'general-challenge', 'magic-bolt']) {
+      game = dispatch(game, { type: 'TOGGLE_ACTIVE_SKILL', skillId });
+    }
+    expect(game.progression.preparation.activeSkillIds).toEqual(['physical-cleave', 'tank-guard', 'general-challenge', 'magic-bolt']);
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 1_400 });
+
+    expect(game.combat.heroMana).toBeCloseTo(17.8);
+    expect(game.enemy?.health).toBe(8);
+    expect(game.events.some(({ message }) => message.includes('Cleave'))).toBe(true);
+  });
+
+  it('rejects unavailable Skills and refunds invested ranks on free Preparation respec', () => {
+    let game = createGame();
+    game = { ...game, progression: { ...game.progression, level: 10, skillPoints: 2 } };
+    game = dispatch(game, { type: 'INVEST_SKILL', skillId: 'magic-focus' });
+    game = dispatch(game, { type: 'INVEST_SKILL', skillId: 'magic-aura' });
+    expect(game.progression.skillRanks['magic-aura']).toBe(1);
+    game = dispatch(game, { type: 'RESPEC_SKILLS' });
+
+    expect(game.progression.skillPoints).toBe(2);
+    expect(game.progression.skillRanks['magic-aura']).toBeUndefined();
+    expect(dispatch(game, { type: 'INVEST_SKILL', skillId: 'general-mastery' })).toEqual(game);
+  });
+
+  it('locks Build changes during an active Expedition and applies deterministic target policy', () => {
+    let game = dispatch(createGame(), { type: 'SET_TARGET_POLICY', policy: 'lowest-health' });
+    expect(game.combat.targetPolicy).toBe('lowest-health');
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    expect(dispatch(game, { type: 'SET_TARGET_POLICY', policy: 'highest-health' })).toEqual(game);
+    expect(dispatch(game, { type: 'RESPEC_SKILLS' })).toEqual(game);
+  });
+
+  it('selects stable targets and applies always-on passive progression', () => {
+    expect(selectTarget([{ name: 'first', health: 20 }, { name: 'last', health: 5 }], 'lowest-health')?.name).toBe('last');
+    let game = createGame();
+    game = { ...game, progression: { ...game.progression, level: 10, skillPoints: 2 } };
+    game = dispatch(game, { type: 'INVEST_SKILL', skillId: 'magic-focus' });
+    game = dispatch(game, { type: 'INVEST_SKILL', skillId: 'tank-fortitude' });
+    expect(game.combat.maxMana).toBe(32);
+    expect(game.hero.maxHealth).toBe(103);
+  });
+
   it('awards persistent XP only when a Room completes', () => {
     let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 4_200 });

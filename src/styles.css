@@ -17,10 +17,18 @@ h2 { font-family: Georgia, serif; font-weight: 400; font-size: 1.65rem; margin: 
 .status-pill[data-status="completed"] { background: #dcefe3; color: #286640; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .review { margin-bottom: 16px; }
+.preparation { margin-bottom: 16px; }
 .review .points { color: #65766d; font-size: .9rem; }
 .attribute-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 .attribute-controls button { padding: 9px 12px; font-size: .9rem; }
 .attribute-controls button span { color: #65766d; }
+.skill-controls { display: grid; gap: 16px; margin: 20px 0; }
+.skill-controls > div { display: grid; gap: 8px; }
+.skill-controls .label { font-size: .68rem; }
+.skill-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.skill-row small, .skill-controls button span { color: #65766d; }
+.target-policy { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+select { border: 1px solid #b7b5aa; border-radius: 8px; background: #fffdf8; padding: 8px; font: inherit; }
 .panel p:last-child { margin-bottom: 0; }
 .controls { display: flex; align-items: center; gap: 12px; margin: 24px 0; flex-wrap: wrap; }
 button { border: 0; border-radius: 10px; background: #214c35; color: white; cursor: pointer; font: inherit; font-weight: 700; padding: 13px 18px; }
