@@ -23,6 +23,23 @@ describe('deterministic simulation boundary', () => {
     expect(selected.currency).toBe(0);
   });
 
+  it('keeps the next ordinary Area selectable after the opening chapter Boss is completed', () => {
+    const game = {
+      ...createGame(),
+      areaProgress: {
+        ...createGame().areaProgress,
+        'sunlit-meadow': { completions: 1 },
+        'moonlit-grove': { completions: 2 },
+      },
+    };
+    let selected = dispatch(game, { type: 'SELECT_AREA', areaId: 'grove-chapter-boss' });
+    expect(selected.selectedAreaId).toBe('grove-chapter-boss');
+    selected = dispatch(selected, { type: 'START_EXPEDITION' });
+    selected = dispatch(selected, { type: 'STOP_AUTO_REPEAT' });
+    selected = dispatch(selected, { type: 'ADVANCE_TIME', milliseconds: 20_000 });
+    expect(getAreaMap(selected).some(({ id, status }) => id === 'region-area-3' && status === 'unlocked')).toBe(true);
+  });
+
   it('unlocks Areas sequentially and requires replaying an ordinary Area before its Boss Area', () => {
     let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
     game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });

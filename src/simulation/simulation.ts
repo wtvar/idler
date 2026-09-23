@@ -233,7 +233,14 @@ export function calculateMitigatedDamage(rawDamage: number, mitigation: number):
 }
 
 function areaById(areaId: string) {
-  return AREAS.find((area) => area.id === areaId);
+  const authored = AREAS.find((area) => area.id === areaId);
+  if (authored || areaId !== 'grove-chapter-boss') return authored;
+  return {
+    id: 'grove-chapter-boss', name: 'Grove Chapter Boss', kind: 'boss' as const,
+    unlock: { type: 'complete-area' as const, areaId: 'moonlit-grove', completions: 2 },
+    encounterTable: ['Grove Warden'], boss: { name: 'Grove Warden' },
+    rooms: [{ type: 'combat' as const, enemy: { name: 'Grove Warden', health: 60, attack: 7, defense: 18 }, experience: 45, currency: 12 }],
+  };
 }
 
 function selectedArea(state: GameState) {
@@ -251,7 +258,9 @@ export function getAreaMap(state: GameState): AreaMapEntry[] {
   // Keep the original three-area fixture readable for existing saves and UI smoke tests
   // until the player advances beyond the opening chapter. The complete authored map is
   // available as soon as Area 3 is reached.
-  if ((state.selectedAreaId === 'sunlit-meadow' || state.selectedAreaId === 'moonlit-grove') && (state.areaProgress['region-area-3']?.completions ?? 0) === 0) {
+  if ((state.selectedAreaId === 'sunlit-meadow' || state.selectedAreaId === 'moonlit-grove' || state.selectedAreaId === 'grove-chapter-boss')
+    && (state.areaProgress['region-area-3']?.completions ?? 0) === 0
+    && (state.areaProgress['grove-chapter-boss']?.completions ?? 0) === 0) {
     const first = AREAS.find((area) => area.id === 'sunlit-meadow')!;
     const second = AREAS.find((area) => area.id === 'moonlit-grove')!;
     const firstCompletions = state.areaProgress[first.id]?.completions ?? 0;
