@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { App } from './App';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 
 describe('playable browser shell', () => {
   it('provides primary and secondary navigation for the player destinations', () => {
