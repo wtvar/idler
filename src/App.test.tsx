@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { App } from './App';
 
@@ -9,11 +9,13 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
+beforeEach(() => window.localStorage.clear());
+
 describe('playable browser shell', () => {
   it('provides primary and secondary navigation for the player destinations', () => {
     render(<App />);
 
-    expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toHaveTextContent('ExpeditionArea MapPreparationHeroInventory');
+    expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toHaveTextContent('ExpeditionArea MapSkillsPreparationHeroInventory');
     expect(screen.getByRole('navigation', { name: 'Secondary navigation' })).toHaveTextContent('HistorySettings');
     expect(screen.getByRole('link', { name: 'Area Map' })).toHaveAttribute('href', '#area-map');
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '#settings');
@@ -58,8 +60,18 @@ describe('playable browser shell', () => {
 
   it('shows a separate rank-up control for Active Skills', () => {
     render(<App />);
-    expect(screen.getByRole('button', { name: /Remove Measured Strike for Expedition/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Level up Measured Strike/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Skills' })).toBeInTheDocument();
+  });
+
+  it('shows Skill trees, prerequisites, descriptions, and Aura or Ultimate rank-up controls', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('link', { name: 'Skills' }));
+    expect(screen.getByRole('region', { name: 'Skills' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'physical Skill tree' })).toHaveTextContent('Requires: Measured Strike');
+    expect(screen.getByText('The selected Aura improves Mana regeneration.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Level up Arcane Aura' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Level up Meteor' })).toBeDisabled();
   });
 
   it('exposes keyboard-friendly status text and expandable secondary detail', async () => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { availableInventorySpace, compareItem, createGame, dispatch, getAreaMap, inventoryCapacity, isSkillEligible, itemStats } from './simulation/simulation';
 import { browserSavePersistence, SaveError, SaveStore, serializeSave } from './simulation/save';
-import type { Command, EquipmentPosition, GameState, Item, SkillDefinition, SkillKind, TargetPolicy } from './simulation/types';
+import type { Command, EquipmentPosition, GameState, Item, SkillDefinition, TargetPolicy } from './simulation/types';
 import './styles.css';
 
 function formatEventTime(timestampMilliseconds: number): string {
@@ -20,6 +20,7 @@ export function App() {
   const [inspectedItemId, setInspectedItemId] = useState<string | null>(null);
   const [saveText, setSaveText] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  const [page, setPage] = useState<'expedition' | 'skills'>('expedition');
   const send = (command: Command) => setGame((current) => dispatch(current, command));
   const simulateFiveMinutes = () => setGame((current) => {
     const started = current.status === 'preparation' ? dispatch(current, { type: 'START_EXPEDITION' }) : current;
@@ -58,15 +59,23 @@ export function App() {
   const progress = game.roomType === 'complete' ? game.roomCount : game.roomIndex;
   const expeditionRisk = game.status === 'recovery' ? 'Recovery' : game.status === 'active' && game.hero.health / game.hero.maxHealth < .35 ? 'High' : game.status === 'active' ? 'Watching' : 'Ready';
   const heroCombatState = game.status === 'active' && game.roomType === 'combat' ? 'In Combat' : game.status === 'recovery' ? 'Recovering' : 'Preparing';
-  const skillGroups: SkillKind[] = ['active', 'passive', 'aura', 'ultimate', 'mastery'];
+  const skillTrees = ['physical', 'tank', 'magic', 'general'] as const;
   const skillButton = (skill: SkillDefinition) => {
     const rank = game.progression.skillRanks[skill.id] ?? 0;
     const eligible = isSkillEligible(game.progression, skill);
     const selected = game.progression.preparation.activeSkillIds.includes(skill.id) || game.progression.preparation.auraId === skill.id || game.progression.preparation.ultimateId === skill.id;
-    if (skill.kind === 'active') return <div className="skill-row" key={skill.id}><span>{skill.name} <small>(active, rank {rank}/{skill.maxRank})</small></span><div className="skill-actions"><button className="secondary" onClick={() => send({ type: 'TOGGLE_ACTIVE_SKILL', skillId: skill.id })} disabled={game.status !== 'preparation' || !eligible || rank === 0 || (!selected && game.progression.preparation.activeSkillIds.length >= 4)}>{selected ? 'Remove' : 'Select'} {skill.name} for Expedition</button><button className="secondary" onClick={() => send({ type: 'INVEST_SKILL', skillId: skill.id })} disabled={game.status !== 'preparation' || !eligible || game.progression.skillPoints === 0 || rank >= skill.maxRank}>Level up {skill.name}</button></div></div>;
-    if (skill.kind === 'aura') return <button className="secondary" key={skill.id} onClick={() => send({ type: 'SELECT_AURA', skillId: selected ? null : skill.id })} disabled={game.status !== 'preparation' || !eligible || rank === 0}>{game.progression.preparation.auraId === skill.id ? 'Remove' : 'Select'} Aura: {skill.name} <span>({rank}/{skill.maxRank})</span></button>;
-    if (skill.kind === 'ultimate') return <button className="secondary" key={skill.id} onClick={() => send({ type: 'SELECT_ULTIMATE', skillId: selected ? null : skill.id })} disabled={game.status !== 'preparation' || !eligible || rank === 0}>{game.progression.preparation.ultimateId === skill.id ? 'Remove' : 'Select'} Ultimate: {skill.name} <span>({rank}/{skill.maxRank})</span></button>;
-    return <div className="skill-row" key={skill.id}><span>{skill.name} <small>({skill.kind}, rank {rank}/{skill.maxRank})</small></span>{rank < skill.maxRank && <button className="secondary" onClick={() => send({ type: 'INVEST_SKILL', skillId: skill.id })} disabled={game.status !== 'preparation' || !eligible || game.progression.skillPoints === 0}>Invest</button>}</div>;
+    const prerequisiteNames = skill.prerequisites.map((id) => game.skills.find((candidate) => candidate.id === id)?.name ?? id);
+    return <article className={`skill-node ${eligible ? '' : 'skill-node-locked'}`} key={skill.id}>
+      <div className="skill-node-heading"><div><h3>{skill.name}</h3><span className="skill-kind">{skill.kind} · rank {rank}/{skill.maxRank}</span></div><span className="skill-level">Level {skill.unlockLevel}+</span></div>
+      <p>{skill.description}</p>
+      <p className="skill-requirements">{prerequisiteNames.length > 0 ? `Requires: ${prerequisiteNames.join(', ')}` : 'Starting Skill'}{!eligible && game.progression.level < skill.unlockLevel ? ` · Unlocks at Hero level ${skill.unlockLevel}` : ''}</p>
+      <div className="skill-actions">
+        {skill.kind === 'active' && <button className="secondary" onClick={() => send({ type: 'TOGGLE_ACTIVE_SKILL', skillId: skill.id })} disabled={game.status !== 'preparation' || !eligible || rank === 0 || (!selected && game.progression.preparation.activeSkillIds.length >= 4)}>{selected ? 'Remove' : 'Select'} {skill.name} for Expedition</button>}
+        {skill.kind === 'aura' && <button className="secondary" onClick={() => send({ type: 'SELECT_AURA', skillId: selected ? null : skill.id })} disabled={game.status !== 'preparation' || !eligible || rank === 0}>{selected ? 'Remove' : 'Select'} Aura: {skill.name}</button>}
+        {skill.kind === 'ultimate' && <button className="secondary" onClick={() => send({ type: 'SELECT_ULTIMATE', skillId: selected ? null : skill.id })} disabled={game.status !== 'preparation' || !eligible || rank === 0}>{selected ? 'Remove' : 'Select'} Ultimate: {skill.name}</button>}
+        {rank < skill.maxRank && <button className="secondary" onClick={() => send({ type: 'INVEST_SKILL', skillId: skill.id })} disabled={game.status !== 'preparation' || !eligible || game.progression.skillPoints === 0}>Level up {skill.name}</button>}
+      </div>
+    </article>;
   };
   const policies: TargetPolicy[] = ['first', 'last', 'lowest-health', 'highest-health', 'boss-champion-first'];
   const inspectedItem = game.inventory.find((item) => item.id === inspectedItemId) ?? game.inventory[0];
@@ -77,14 +86,15 @@ export function App() {
     return difference === 0 ? null : `${stat} ${difference > 0 ? '+' : ''}${difference}`;
   }).filter((value): value is string => value !== null).join(' · ') || 'no change';
   const equipButton = (item: Item, equipmentSlot?: EquipmentPosition) => <button className="secondary" onClick={() => send({ type: 'EQUIP_ITEM', itemId: item.id, equipmentSlot })} disabled={game.status !== 'preparation'}>{item.slot === 'ring' ? `Equip ${equipmentSlot ?? 'ring'}` : 'Equip'}</button>;
-  return <main className="shell">
+  return <main className={`shell ${page === 'skills' ? 'skills-route' : 'expedition-route'}`}>
     <header><p className="eyebrow">IDLER · EXPEDITION DASHBOARD</p><h1>{game.areaName}</h1><p className="muted">A quiet place to prepare, then let the Hero work.</p></header>
     <nav className="destination-nav" aria-label="Primary navigation">
-      <a className="active" href="#expedition">Expedition</a>
-      <a href="#area-map">Area Map</a>
-      <a href="#preparation">Preparation</a>
-      <a href="#hero">Hero</a>
-      <a href="#inventory">Inventory</a>
+      <a className={page === 'expedition' ? 'active' : ''} href="#expedition" onClick={() => setPage('expedition')}>Expedition</a>
+      <a href="#area-map" onClick={() => setPage('expedition')}>Area Map</a>
+      <a className={page === 'skills' ? 'active' : ''} href="#skills" onClick={() => setPage('skills')}>Skills</a>
+      <a href="#preparation" onClick={() => setPage('expedition')}>Preparation</a>
+      <a href="#hero" onClick={() => setPage('expedition')}>Hero</a>
+      <a href="#inventory" onClick={() => setPage('expedition')}>Inventory</a>
     </nav>
     <nav className="destination-nav secondary-nav" aria-label="Secondary navigation">
       <a href="#history">History</a>
@@ -110,11 +120,18 @@ export function App() {
         {(['might', 'vitality', 'agility', 'focus'] as const).map((attribute) => <button key={attribute} className="secondary" onClick={() => send({ type: 'SPEND_ATTRIBUTE', attribute })} disabled={game.status !== 'preparation' || game.progression.attributePoints === 0}>Spend 1 {attribute[0].toUpperCase() + attribute.slice(1)} <span>({game.progression.attributes[attribute]})</span></button>)}
       </div>
     </section>
+    <section className="panel skills-page" id="skills" aria-label="Skills">
+      <span className="label">SKILL TREE</span>
+      <h2>Build your Skills</h2>
+      <p className="muted">Spend Skill points to unlock nodes. Each node shows its prerequisite path and effect. Auras and Ultimates must be ranked here before they can be selected for an Expedition.</p>
+      <p className="points">Skill points available: {game.progression.skillPoints} · Hero level: {game.progression.level}</p>
+      <div className="skill-tree-grid">{skillTrees.map((tree) => <section className="skill-tree" key={tree} aria-label={`${tree} Skill tree`}><span className="label">{tree} tree</span>{game.skills.filter((skill) => skill.tree === tree).map(skillButton)}</section>)}</div>
+    </section>
     <section className="panel preparation" id="preparation" aria-label="Preparation">
       <span className="label">PREPARATION</span>
       <h2>Build choices for the next Expedition</h2>
       <p className="muted">{game.status === 'active' ? 'Build changes are locked during the active Expedition.' : `${game.progression.preparation.activeSkillIds.length}/4 Active Skills selected · ${game.progression.preparation.auraId ? '1' : '0'}/1 Aura · ${game.progression.preparation.ultimateId ? '1' : '0'}/1 Ultimate`}</p>
-      <div className="skill-controls">{skillGroups.map((kind) => <div key={kind}><span className="label">{kind}</span>{game.skills.filter((skill) => skill.kind === kind).map(skillButton)}</div>)}</div>
+      <p><a href="#skills" onClick={() => setPage('skills')}>Open the full Skill tree</a> to level Skills, inspect prerequisites, and choose Auras or Ultimates.</p>
       <label className="target-policy">Target policy <select aria-label="Target policy" value={game.progression.preparation.targetPolicy} onChange={(event) => send({ type: 'SET_TARGET_POLICY', policy: event.target.value as TargetPolicy })} disabled={game.status !== 'preparation'}>{policies.map((policy) => <option key={policy} value={policy}>{policy}</option>)}</select></label>
       <div className="consumable-controls" aria-label="Consumable preparation">
         <span className="label">CONSUMABLES</span>

@@ -25,3 +25,5 @@ Configure Health and Mana Potion thresholds and select one timed Combat buff in 
 Use the Area Map to select unlocked Areas. Complete an Area once to unlock the next ordinary Area, then replay the preceding Area to unlock its chapter Boss.
 
 Ordinary Areas can roll weighted Champions with increased rewards. The Region Boss unlocks after Area 20 and requires the displayed currency attempt cost before it can be selected.
+
+Use the Skills navigation to open the dedicated Skill tree view. Each Skill shows its description, Hero-level unlock, prerequisites, rank, and available level/select actions.
