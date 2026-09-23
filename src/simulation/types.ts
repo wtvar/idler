@@ -4,7 +4,18 @@ export type Command =
   | { type: 'START_EXPEDITION' }
   | { type: 'ADVANCE_TIME'; milliseconds: number }
   | { type: 'WITHDRAW' }
-  | { type: 'STOP_AUTO_REPEAT' };
+  | { type: 'STOP_AUTO_REPEAT' }
+  | { type: 'SPEND_ATTRIBUTE'; attribute: Attribute };
+
+export type Attribute = 'might' | 'vitality' | 'agility' | 'focus';
+
+export type ProgressionState = {
+  level: number;
+  experience: number;
+  attributePoints: number;
+  skillPoints: number;
+  attributes: Record<Attribute, number>;
+};
 
 export type Event = { id: number; message: string };
 
@@ -56,5 +67,7 @@ export type GameState = {
   autoRepeat: boolean;
   outcome: ExpeditionOutcome | null;
   events: Event[];
+  progression: ProgressionState;
+  reviewQueue: string[];
   combat: CombatState;
 };

@@ -18,9 +18,17 @@ export function App() {
   return <main className="shell">
     <header><p className="eyebrow">IDLER · EXPEDITION DASHBOARD</p><h1>{game.areaName}</h1><p className="muted">A quiet place to prepare, then let the Hero work.</p></header>
     <section className="hero-card" aria-label="Hero status">
-      <div><span className="label">HERO</span><h2>{game.hero.name}</h2><p>Health {Math.ceil(game.hero.health)}/{game.hero.maxHealth}</p><p>Mana {Math.floor(game.combat.heroMana)}/{game.combat.maxMana}</p></div>
+      <div><span className="label">HERO</span><h2>{game.hero.name}</h2><p>Level {game.progression.level} · {game.progression.experience} XP</p><p>Health {Math.ceil(game.hero.health)}/{game.hero.maxHealth}</p><p>Mana {Math.floor(game.combat.heroMana)}/{game.combat.maxMana}</p></div>
       <div className="health-bar"><span style={{ width: `${Math.max(0, game.hero.health / game.hero.maxHealth * 100)}%` }} /></div>
       <div className="status-pill" data-status={game.status}>{game.status}</div>
+    </section>
+    <section className="panel review" aria-label="Review queue">
+      <span className="label">REVIEW QUEUE</span>
+      {game.reviewQueue.length === 0 ? <p>Nothing needs review.</p> : game.reviewQueue.map((item) => <p key={item}>{item}</p>)}
+      <p className="points">Attribute points: {game.progression.attributePoints} · Skill points: {game.progression.skillPoints}</p>
+      <div className="attribute-controls" aria-label="Attribute decisions">
+        {(['might', 'vitality', 'agility', 'focus'] as const).map((attribute) => <button key={attribute} className="secondary" onClick={() => send({ type: 'SPEND_ATTRIBUTE', attribute })} disabled={game.status !== 'preparation' || game.progression.attributePoints === 0}>Spend 1 {attribute[0].toUpperCase() + attribute.slice(1)} <span>({game.progression.attributes[attribute]})</span></button>)}
+      </div>
     </section>
     <section className="grid">
       <article className="panel"><span className="label">EXPEDITION</span><h2>Room {Math.min(progress + 1, game.roomCount)} of {game.roomCount}</h2><p>{game.roomType === 'combat' && game.enemy ? `${game.enemy.name}: ${Math.max(0, game.enemy.health)}/${game.enemy.maxHealth} health` : game.roomType === 'empty' ? 'Empty Room · resolving its effect' : 'Every Room is secured.'}</p><div className="room-track" aria-label={`Room ${progress} of ${game.roomCount}`}><span style={{ width: `${progress / game.roomCount * 100}%` }} /></div></article>

@@ -2,6 +2,72 @@ import { describe, expect, it } from 'vitest';
 import { createGame, dispatch } from './simulation';
 
 describe('deterministic simulation boundary', () => {
+  it('awards persistent XP only when a Room completes', () => {
+    let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 4_200 });
+
+    expect(game.progression.experience).toBe(10);
+    expect(game.progression.level).toBe(1);
+
+    game = dispatch(game, { type: 'WITHDRAW' });
+    expect(game.progression.experience).toBe(10);
+    expect(game.progression.experience).not.toBe(15);
+  });
+
+  it('levels up from committed Room XP and queues authored rewards', () => {
+    let game = createGame();
+    game = { ...game, progression: { ...game.progression, experience: 90 } };
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 4_200 });
+
+    expect(game.progression.level).toBe(2);
+    expect(game.progression.attributePoints).toBe(2);
+    expect(game.progression.skillPoints).toBe(1);
+    expect(game.reviewQueue).toContain('Level 2 reached: 2 Attribute points and 1 Skill point available.');
+    expect(game.reviewQueue).toContain('1 Skill point available to spend.');
+  });
+
+  it('caps progression and does not grant rewards beyond the authored cap', () => {
+    let game = createGame();
+    game = { ...game, progression: { ...game.progression, level: 100, experience: 9_999 } };
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 2_000 });
+
+    expect(game.progression.level).toBe(100);
+    expect(game.progression.attributePoints).toBe(0);
+    expect(game.progression.skillPoints).toBe(0);
+  });
+
+  it('spends Attribute points between Expeditions and changes combat capabilities', () => {
+    let game = createGame();
+    game = { ...game, progression: { ...game.progression, attributePoints: 4 } };
+    const before = game.hero;
+    game = dispatch(game, { type: 'SPEND_ATTRIBUTE', attribute: 'might' });
+    game = dispatch(game, { type: 'SPEND_ATTRIBUTE', attribute: 'vitality' });
+    game = dispatch(game, { type: 'SPEND_ATTRIBUTE', attribute: 'agility' });
+    game = dispatch(game, { type: 'SPEND_ATTRIBUTE', attribute: 'focus' });
+
+    expect(game.progression.attributes).toEqual({ might: 1, vitality: 1, agility: 1, focus: 1 });
+    expect(game.progression.attributePoints).toBe(0);
+    expect(game.hero.attack).toBeGreaterThan(before.attack);
+    expect(game.hero.maxHealth).toBeGreaterThan(before.maxHealth);
+    expect(game.hero.attackInterval).toBeLessThan(before.attackInterval);
+    expect(game.combat.maxMana).toBeGreaterThan(30);
+    expect(game.combat.heroDefense).toBe(10.5);
+    expect(game.combat.heroHealthRegeneration).toBeCloseTo(1.1);
+    expect(game.combat.heroManaRegeneration).toBeCloseTo(2.2);
+  });
+
+  it('keeps pending progression visible in the Review queue during active Combat', () => {
+    let game = createGame();
+    game = { ...game, progression: { ...game.progression, attributePoints: 1 } };
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+
+    expect(game.status).toBe('active');
+    expect(game.reviewQueue).toContain('1 Attribute point available to spend.');
+    expect(dispatch(game, { type: 'SPEND_ATTRIBUTE', attribute: 'might' })).toEqual(game);
+  });
+
   it('starts a new Hero in Preparation and locks it when an Expedition starts', () => {
     const game = dispatch(createGame(42), { type: 'START_EXPEDITION' });
     expect(game.status).toBe('active');
@@ -30,7 +96,7 @@ describe('deterministic simulation boundary', () => {
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 1_000 });
     expect(game.roomIndex).toBe(0);
     expect(game.committed).toEqual({ experience: 0, currency: 0 });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 2_000 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 3_200 });
     expect(game.roomIndex).toBe(1);
     expect(game.committed).toEqual({ experience: 10, currency: 2 });
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });
@@ -40,9 +106,9 @@ describe('deterministic simulation boundary', () => {
 
   it('completes the authored fixture and commits the final Room', () => {
     let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 4_000 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 4_200 });
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 3_000 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 5_600 });
     expect(game.status).toBe('active');
     expect(game.roomIndex).toBe(0);
     expect(game.committed).toEqual({ experience: 0, currency: 0 });
@@ -53,7 +119,7 @@ describe('deterministic simulation boundary', () => {
   it('returns to Preparation after completion when automatic repeat is stopped', () => {
     let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
     game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 7_100 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 9_900 });
     expect(game.status).toBe('preparation');
     expect(game.outcome?.result).toBe('completed');
     game = dispatch(game, { type: 'START_EXPEDITION' });
@@ -67,7 +133,7 @@ describe('deterministic simulation boundary', () => {
     expect(game.combat.heroMana).toBeGreaterThan(20);
     expect(game.combat.heroMana).toBeLessThanOrEqual(game.combat.maxMana);
 
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 1_000 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 2_200 });
     expect(game.roomType).toBe('empty');
     const healthBeforeEffect = game.hero.health;
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });

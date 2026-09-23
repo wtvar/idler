@@ -1,27 +1,38 @@
 import { FIRST_AREA } from './content';
-import type { Command, CombatState, Event, ExpeditionOutcome, GameState, StatusEffect } from './types';
+import type { Command, CombatState, Event, ExpeditionOutcome, GameState, ProgressionState, StatusEffect } from './types';
 
 const SIMULATION_VERSION = 'v1-expedition-loop';
 const TICK_MILLISECONDS = 100;
-const HERO_ATTACK_INTERVAL = 1_000;
+const HERO_ATTACK_INTERVAL = 1_400;
 const ENEMY_ATTACK_INTERVAL = 1_500;
 const HERO_MAX_MANA = 30;
 const HERO_MANA_REGENERATION = 2;
 const HERO_HEALTH_REGENERATION = 1;
 const RECOVERY_MILLISECONDS = 3_000;
+const MAX_LEVEL = 100;
+const XP_PER_LEVEL = 100;
+const LEVEL_REWARDS = { attributePoints: 2, skillPoints: 1 };
+
+const emptyProgression = (): ProgressionState => ({
+  level: 1,
+  experience: 0,
+  attributePoints: 0,
+  skillPoints: 0,
+  attributes: { might: 0, vitality: 0, agility: 0, focus: 0 },
+});
 
 function event(message: string, id: number): Event { return { id, message }; }
 
-function combatFor(enemyAttack = 0, enemyDefense = 0): CombatState {
+function combatFor(enemyAttack = 0, enemyDefense = 0, progression = emptyProgression()): CombatState {
   return {
     pendingMilliseconds: 0,
     heroAttackProgress: 0,
     enemyAttackProgress: 0,
     heroMana: 20,
-    maxMana: HERO_MAX_MANA,
-    heroManaRegeneration: HERO_MANA_REGENERATION,
-    heroHealthRegeneration: HERO_HEALTH_REGENERATION,
-    heroDefense: 10,
+    maxMana: HERO_MAX_MANA + progression.attributes.focus * 5,
+    heroManaRegeneration: HERO_MANA_REGENERATION + progression.attributes.focus * 0.2,
+    heroHealthRegeneration: HERO_HEALTH_REGENERATION + progression.attributes.vitality * 0.1,
+    heroDefense: 10 + progression.attributes.vitality * 0.5,
     enemyAttack,
     enemyDefense,
     heroCooldowns: {},
@@ -31,6 +42,24 @@ function combatFor(enemyAttack = 0, enemyDefense = 0): CombatState {
   };
 }
 
+function derivedHero(progression: ProgressionState) {
+  return {
+    attack: 8 + progression.attributes.might * 2,
+    maxHealth: 100 + progression.attributes.vitality * 10,
+    attackInterval: Math.max(1_000, HERO_ATTACK_INTERVAL * (1 - Math.min(0.5, progression.attributes.agility * 0.005))),
+  };
+}
+
+function reviewQueue(state: GameState, levelMessages = state.reviewQueue.filter((message) => message.startsWith('Level '))) {
+  const pending = state.progression.attributePoints > 0
+    ? [`${state.progression.attributePoints} Attribute point${state.progression.attributePoints === 1 ? '' : 's'} available to spend.`]
+    : [];
+  const skillPending = state.progression.skillPoints > 0
+    ? [`${state.progression.skillPoints} Skill point${state.progression.skillPoints === 1 ? '' : 's'} available to spend.`]
+    : [];
+  return [...levelMessages, ...pending, ...skillPending];
+}
+
 export function calculateMitigatedDamage(rawDamage: number, mitigation: number): number {
   if (rawDamage <= 0) return 0;
   return Math.max(1, Math.floor(rawDamage * 100 / (100 + Math.max(0, mitigation))));
@@ -38,6 +67,7 @@ export function calculateMitigatedDamage(rawDamage: number, mitigation: number):
 
 export function createGame(seed = 1, options: { startingHealth?: number; enemyAttack?: number } = {}): GameState {
   const room = FIRST_AREA.rooms[0];
+  const progression = emptyProgression();
   return {
     simulationVersion: SIMULATION_VERSION,
     seed,
@@ -47,14 +77,16 @@ export function createGame(seed = 1, options: { startingHealth?: number; enemyAt
     roomCount: FIRST_AREA.rooms.length,
     roomIndex: 0,
     roomType: room.type,
-    hero: { name: 'Ari', health: options.startingHealth ?? 100, maxHealth: 100, attack: 8, attackInterval: HERO_ATTACK_INTERVAL },
+    hero: { name: 'Ari', health: options.startingHealth ?? 100, ...derivedHero(progression) },
     enemy: room.type === 'combat' ? { name: room.enemy.name, health: room.enemy.health, maxHealth: room.enemy.health } : null,
     committed: { experience: 0, currency: 0 },
     recoveryRemainingMilliseconds: 0,
     autoRepeat: true,
     outcome: null,
     events: [event('A new Hero is ready in Sunlit Meadow.', 0)],
-    combat: combatFor(room.type === 'combat' ? options.enemyAttack ?? room.enemy.attack : 0),
+    progression,
+    reviewQueue: [],
+    combat: combatFor(room.type === 'combat' ? options.enemyAttack ?? room.enemy.attack : 0, 0, progression),
   };
 }
 
@@ -67,6 +99,27 @@ function withCombat(state: GameState, combat: Partial<CombatState>): GameState {
   return { ...state, combat: { ...state.combat, ...combat } };
 }
 
+function refreshProgressionPresentation(state: GameState, levelMessages?: string[]): GameState {
+  const heroStats = derivedHero(state.progression);
+  const maxHealthDelta = heroStats.maxHealth - state.hero.maxHealth;
+  return {
+    ...state,
+    hero: {
+      ...state.hero,
+      ...heroStats,
+      health: Math.min(heroStats.maxHealth, Math.max(0, state.hero.health + Math.max(0, maxHealthDelta))),
+    },
+    combat: {
+      ...state.combat,
+      maxMana: HERO_MAX_MANA + state.progression.attributes.focus * 5,
+      heroManaRegeneration: HERO_MANA_REGENERATION + state.progression.attributes.focus * 0.2,
+      heroHealthRegeneration: HERO_HEALTH_REGENERATION + state.progression.attributes.vitality * 0.1,
+      heroDefense: 10 + state.progression.attributes.vitality * 0.5,
+    },
+    reviewQueue: reviewQueue(state, levelMessages),
+  };
+}
+
 function enterRoom(state: GameState, roomIndex: number): GameState {
   const room = FIRST_AREA.rooms[roomIndex];
   if (!room) return { ...state, status: 'completed', roomType: 'complete', enemy: null };
@@ -76,7 +129,7 @@ function enterRoom(state: GameState, roomIndex: number): GameState {
     roomIndex,
     roomType: room.type,
     enemy,
-    combat: combatFor(room.type === 'combat' ? room.enemy.attack : 0, room.type === 'combat' ? room.enemy.defense : 0),
+    combat: combatFor(room.type === 'combat' ? room.enemy.attack : 0, room.type === 'combat' ? room.enemy.defense : 0, state.progression),
   };
 }
 
@@ -110,10 +163,20 @@ function beginRecovery(state: GameState): GameState {
 
 function commitRoom(state: GameState): GameState {
   const room = FIRST_AREA.rooms[state.roomIndex];
-  return {
+  let next = {
     ...state,
     committed: { experience: state.committed.experience + room.experience, currency: state.committed.currency + room.currency },
   };
+  const progression = { ...next.progression, experience: next.progression.experience + room.experience };
+  const levelMessages = next.reviewQueue.filter((message) => message.startsWith('Level '));
+  while (progression.level < MAX_LEVEL && progression.experience >= progression.level * XP_PER_LEVEL) {
+    progression.level += 1;
+    progression.attributePoints += LEVEL_REWARDS.attributePoints;
+    progression.skillPoints += LEVEL_REWARDS.skillPoints;
+    levelMessages.push(`Level ${progression.level} reached: ${LEVEL_REWARDS.attributePoints} Attribute points and ${LEVEL_REWARDS.skillPoints} Skill point available.`);
+  }
+  next = { ...next, progression };
+  return refreshProgressionPresentation(next, levelMessages);
 }
 
 function expireStatuses(statuses: StatusEffect[]): StatusEffect[] {
@@ -136,8 +199,8 @@ function resolveCombatTick(state: GameState): GameState {
     heroCooldowns: Object.fromEntries(Object.entries(state.combat.heroCooldowns)
       .map(([name, remaining]) => [name, Math.max(0, remaining - TICK_MILLISECONDS)])),
   });
-  next = { ...next, hero: { ...next.hero, health: Math.min(next.hero.maxHealth, next.hero.health + HERO_HEALTH_REGENERATION / 10) } };
-  next = withCombat(next, { heroMana: Math.min(next.combat.maxMana, next.combat.heroMana + HERO_MANA_REGENERATION / 10) });
+  next = { ...next, hero: { ...next.hero, health: Math.min(next.hero.maxHealth, next.hero.health + next.combat.heroHealthRegeneration / 10) } };
+  next = withCombat(next, { heroMana: Math.min(next.combat.maxMana, next.combat.heroMana + next.combat.heroManaRegeneration / 10) });
 
   const heroReady = next.combat.heroAttackProgress >= next.hero.attackInterval && !hasStun(next.combat.heroStatuses);
   const enemyReady = next.combat.enemyAttackProgress >= ENEMY_ATTACK_INTERVAL && !hasStun(next.combat.enemyStatuses);
@@ -211,7 +274,7 @@ function restartExpedition(state: GameState, message: string): GameState {
     recoveryRemainingMilliseconds: 0,
     hero: { ...state.hero, health: state.hero.maxHealth },
   }, 0);
-  return addEvent(fresh, message);
+  return addEvent(refreshProgressionPresentation(fresh), message);
 }
 
 function advanceRecovery(state: GameState, milliseconds: number): GameState {
@@ -224,7 +287,7 @@ function advanceRecovery(state: GameState, milliseconds: number): GameState {
 
 export function dispatch(state: GameState, command: Command): GameState {
   if (command.type === 'START_EXPEDITION' && state.status === 'preparation') {
-    return addEvent({ ...state, status: 'active', autoRepeat: true, outcome: null }, 'Expedition started. Preparation is locked.');
+    return addEvent(refreshProgressionPresentation({ ...state, status: 'active', autoRepeat: true, outcome: null }), 'Expedition started. Preparation is locked.');
   }
   if (command.type === 'ADVANCE_TIME') return advance(state, command.milliseconds);
   if (command.type === 'WITHDRAW' && state.status === 'active') {
@@ -233,6 +296,13 @@ export function dispatch(state: GameState, command: Command): GameState {
   }
   if (command.type === 'STOP_AUTO_REPEAT' && (state.status === 'active' || state.status === 'recovery')) {
     return addEvent({ ...state, autoRepeat: false, outcome: state.outcome ? { ...state.outcome, willRestart: false } : state.outcome }, 'Automatic repeat stopped.');
+  }
+  if (command.type === 'SPEND_ATTRIBUTE' && state.status === 'preparation' && state.progression.attributePoints > 0) {
+    const attributes = { ...state.progression.attributes, [command.attribute]: state.progression.attributes[command.attribute] + 1 };
+    return refreshProgressionPresentation({
+      ...state,
+      progression: { ...state.progression, attributes, attributePoints: state.progression.attributePoints - 1 },
+    });
   }
   return state;
 }
