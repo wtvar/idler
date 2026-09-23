@@ -7,6 +7,26 @@ import { App } from './App';
 afterEach(cleanup);
 
 describe('playable browser shell', () => {
+  it('provides primary and secondary navigation for the player destinations', () => {
+    render(<App />);
+
+    expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toHaveTextContent('ExpeditionArea MapPreparationHeroInventory');
+    expect(screen.getByRole('navigation', { name: 'Secondary navigation' })).toHaveTextContent('HistorySettings');
+    expect(screen.getByRole('link', { name: 'Area Map' })).toHaveAttribute('href', '#area-map');
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '#settings');
+  });
+
+  it('puts active progress, risk, Combat, Room timeline, and pending notifications on the dashboard', () => {
+    render(<App />);
+
+    const summary = screen.getByRole('region', { name: 'Expedition summary' });
+    expect(summary).toHaveTextContent('Active progress');
+    expect(summary).toHaveTextContent('Expedition risk');
+    expect(summary).toHaveTextContent('Hero Combat');
+    expect(summary).toHaveTextContent('Room timeline');
+    expect(summary).toHaveTextContent('Pending notifications');
+  });
+
   it('lets the player start an Expedition from the dashboard', async () => {
     const user = userEvent.setup();
     render(<App />);

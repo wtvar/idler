@@ -28,6 +28,8 @@ export function App() {
 
   const canStart = game.status === 'preparation' && game.progression.preparation.activeSkillIds.length === 4;
   const progress = game.roomType === 'complete' ? game.roomCount : game.roomIndex;
+  const expeditionRisk = game.status === 'recovery' ? 'Recovery' : game.status === 'active' && game.hero.health / game.hero.maxHealth < .35 ? 'High' : game.status === 'active' ? 'Watching' : 'Ready';
+  const heroCombatState = game.status === 'active' && game.roomType === 'combat' ? 'In Combat' : game.status === 'recovery' ? 'Recovering' : 'Preparing';
   const skillGroups: SkillKind[] = ['active', 'passive', 'aura', 'ultimate', 'mastery'];
   const skillButton = (skill: SkillDefinition) => {
     const rank = game.progression.skillRanks[skill.id] ?? 0;
@@ -49,7 +51,25 @@ export function App() {
   const equipButton = (item: Item, equipmentSlot?: EquipmentPosition) => <button className="secondary" onClick={() => send({ type: 'EQUIP_ITEM', itemId: item.id, equipmentSlot })} disabled={game.status !== 'preparation'}>{item.slot === 'ring' ? `Equip ${equipmentSlot ?? 'ring'}` : 'Equip'}</button>;
   return <main className="shell">
     <header><p className="eyebrow">IDLER · EXPEDITION DASHBOARD</p><h1>{game.areaName}</h1><p className="muted">A quiet place to prepare, then let the Hero work.</p></header>
-    <section className="hero-card" aria-label="Hero status">
+    <nav className="destination-nav" aria-label="Primary navigation">
+      <a className="active" href="#expedition">Expedition</a>
+      <a href="#area-map">Area Map</a>
+      <a href="#preparation">Preparation</a>
+      <a href="#hero">Hero</a>
+      <a href="#inventory">Inventory</a>
+    </nav>
+    <nav className="destination-nav secondary-nav" aria-label="Secondary navigation">
+      <a href="#history">History</a>
+      <a href="#settings">Settings</a>
+    </nav>
+    <section className="dashboard-summary" id="expedition" aria-label="Expedition summary">
+      <article><span className="label">Active progress</span><strong>Room {Math.min(progress + 1, game.roomCount)} of {game.roomCount}</strong><span>{game.committed.experience} XP committed</span></article>
+      <article><span className="label">Expedition risk</span><strong>{expeditionRisk}</strong><span>{Math.ceil(game.hero.health)}/{game.hero.maxHealth} Health</span></article>
+      <article><span className="label">Hero Combat</span><strong>{heroCombatState}</strong><span>{game.combat.targetPolicy} target policy</span></article>
+      <article><span className="label">Room timeline</span><strong>{progress} secured</strong><span>{game.roomCount - progress} remaining</span></article>
+      <article><span className="label">Pending notifications</span><strong>{game.reviewQueue.length || 'None'}</strong><span>{game.reviewQueue.length ? 'Review queue needs attention' : 'Nothing needs review'}</span></article>
+    </section>
+    <section className="hero-card" id="hero" aria-label="Hero status">
       <div><span className="label">HERO</span><h2>{game.hero.name}</h2><p>Level {game.progression.level} · {game.progression.experience} XP</p><p>Health {Math.ceil(game.hero.health)}/{game.hero.maxHealth}</p><p>Mana {Math.floor(game.combat.heroMana)}/{game.combat.maxMana}</p><p>Build: {game.hero.attack} Attack · {game.combat.heroDefense} Defense · {Math.round(game.hero.attackInterval)} ms interval</p></div>
       <div className="health-bar"><span style={{ width: `${Math.max(0, game.hero.health / game.hero.maxHealth * 100)}%` }} /></div>
       <div className="status-pill" data-status={game.status}>{game.status}</div>
@@ -62,7 +82,7 @@ export function App() {
         {(['might', 'vitality', 'agility', 'focus'] as const).map((attribute) => <button key={attribute} className="secondary" onClick={() => send({ type: 'SPEND_ATTRIBUTE', attribute })} disabled={game.status !== 'preparation' || game.progression.attributePoints === 0}>Spend 1 {attribute[0].toUpperCase() + attribute.slice(1)} <span>({game.progression.attributes[attribute]})</span></button>)}
       </div>
     </section>
-    <section className="panel preparation" aria-label="Preparation">
+    <section className="panel preparation" id="preparation" aria-label="Preparation">
       <span className="label">PREPARATION</span>
       <h2>Build choices for the next Expedition</h2>
       <p className="muted">{game.status === 'active' ? 'Build changes are locked during the active Expedition.' : `${game.progression.preparation.activeSkillIds.length}/4 Active Skills selected · ${game.progression.preparation.auraId ? '1' : '0'}/1 Aura · ${game.progression.preparation.ultimateId ? '1' : '0'}/1 Ultimate`}</p>
@@ -77,13 +97,13 @@ export function App() {
       </div>
       <button className="secondary" onClick={() => send({ type: 'RESPEC_SKILLS' })} disabled={game.status !== 'preparation'}>Free Respec</button>
     </section>
-    <section className="panel" aria-label="Area Map">
+    <section className="panel" id="area-map" aria-label="Area Map">
       <span className="label">AREA MAP</span>
       <h2>Choose an Area</h2>
       <div className="area-map">{getAreaMap(game).map((area) => <button className="secondary" key={area.id} onClick={() => send({ type: 'SELECT_AREA', areaId: area.id })} disabled={area.status === 'locked' || game.status !== 'preparation'}>{area.name} · {area.status}{area.completions > 0 ? ` · ${area.completions} completion${area.completions === 1 ? '' : 's'}` : ''}</button>)}</div>
       <p className="muted">Areas unlock in order. Replay an Area to earn its chapter Boss.</p>
     </section>
-    <section className="panel equipment" aria-label="Equipment and Loot">
+    <section className="panel equipment" id="inventory" aria-label="Equipment and Loot">
       <span className="label">EQUIPMENT &amp; LOOT</span>
       <h2>Build equipment</h2>
       <p className="muted">Inventory: {game.inventory.length}/{inventoryCapacity()} Items · {availableInventorySpace(game)} space available. Full Inventory keeps a stronger eligible Item and explains what was discarded.</p>
@@ -98,6 +118,7 @@ export function App() {
     {game.roomType === 'combat' && game.enemy && <section className="panel combat-state" aria-label="Combat state"><span className="label">COMBAT STATE</span><p>Target policy: {game.combat.targetPolicy}</p><p>Next Hero attack: {Math.max(0, game.hero.attackInterval - game.combat.heroAttackProgress)} ms</p><p>Statuses: {game.combat.heroStatuses.length + game.combat.enemyStatuses.length || 'none'}</p></section>}
     {game.outcome && <section className="panel" aria-label="Expedition outcome"><span className="label">EXPEDITION OUTCOME</span><h2>{game.outcome.result}</h2><p>Room reached: {game.outcome.roomReached} · committed {game.outcome.committed.experience} XP and {game.outcome.committed.currency} currency</p><p>Lost from the incomplete Room: {game.outcome.lost.experience} XP and {game.outcome.lost.currency} currency.</p><p>Consumables used: {Object.entries(game.outcome.consumables.potionsUsed).map(([kind, count]) => `${count} ${kind} Potion${count === 1 ? '' : 's'}`).join(' · ') || 'none'}{game.outcome.consumables.timedBuff ? ` · timed buff: ${game.outcome.consumables.timedBuff}` : ''}</p><p>{game.outcome.result === 'defeated' ? game.outcome.willRestart ? `Recovery: ${Math.ceil(game.recoveryRemainingMilliseconds / 1000)}s remaining; the Area will restart automatically.` : `Recovery: ${Math.ceil(game.recoveryRemainingMilliseconds / 1000)}s remaining; automatic repeat is stopped.` : 'No Recovery is required.'}</p></section>}
     <section className="controls" aria-label="Expedition commands"><button onClick={() => send({ type: 'START_EXPEDITION' })} disabled={!canStart}>Start Expedition</button><button className="secondary" onClick={() => send({ type: 'WITHDRAW' })} disabled={game.status !== 'active'}>Withdraw</button>{game.status === 'recovery' && <button className="secondary" onClick={() => send({ type: 'STOP_AUTO_REPEAT' })} disabled={!game.autoRepeat}>Stop automatic repeat</button>}<button className="secondary" onClick={simulateFiveMinutes}>Simulate 5 minutes</button><span className="muted">{game.status === 'active' ? 'The Hero is acting automatically.' : game.status === 'recovery' ? 'Recovery is advancing on the controlled clock.' : 'Choose Start Expedition when ready.'}</span></section>
-    <section className="panel log" aria-label="Recent outcomes"><span className="label">RECENT OUTCOMES</span><div className="log-entries">{game.events.slice().reverse().map((item) => <p key={item.id}><time dateTime={`PT${item.timestampMilliseconds / 1_000}S`}>{formatEventTime(item.timestampMilliseconds)}</time><span>{item.message}</span></p>)}</div></section>
+    <section className="panel log" id="history" aria-label="Recent outcomes"><span className="label">RECENT OUTCOMES</span><div className="log-entries">{game.events.slice().reverse().map((item) => <p key={item.id}><time dateTime={`PT${item.timestampMilliseconds / 1_000}S`}>{formatEventTime(item.timestampMilliseconds)}</time><span>{item.message}</span></p>)}</div></section>
+    <section className="panel settings" id="settings" aria-label="Settings"><span className="label">SETTINGS</span><h2>Expedition preferences</h2><p className="muted">The controlled clock and automatic Expedition behavior are shown here while settings are being expanded.</p><p>Automatic repeat: {game.autoRepeat ? 'on' : 'off'} · Controlled time: enabled</p></section>
   </main>;
 }
