@@ -59,6 +59,33 @@ describe('playable browser shell', () => {
     expect(screen.getByRole('button', { name: /Level up Measured Strike/ })).toBeInTheDocument();
   });
 
+  it('exposes keyboard-friendly status text and expandable secondary detail', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(screen.getByRole('status', { name: 'Expedition status' })).toHaveTextContent('preparation');
+    expect(screen.getByRole('progressbar', { name: 'Hero health' })).toHaveAttribute('aria-valuenow', '100');
+    await user.tab();
+    expect(screen.getByRole('link', { name: 'Expedition' })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('link', { name: 'Area Map' })).toHaveFocus();
+  });
+
+  it('provides text equivalents for combat state, cooldowns, Room progress, and outcomes', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Start Expedition' }));
+    expect(screen.getByRole('region', { name: 'Combat state' })).toHaveTextContent(/Next Hero attack/);
+    expect(screen.getByRole('region', { name: 'Combat cooldowns' })).toHaveTextContent(/Health potion cooldown/);
+    expect(screen.getByRole('region', { name: 'Room progress' })).toHaveTextContent(/Room 1 of/);
+    await user.click(screen.getByText('Combat detail'));
+    expect(screen.queryByRole('region', { name: 'Combat state' })).not.toBeVisible();
+    await user.click(screen.getByText('Combat detail'));
+    await user.click(screen.getByRole('button', { name: 'Withdraw' }));
+    expect(screen.getByRole('region', { name: 'Expedition outcome' })).toHaveTextContent(/Recovery|No Recovery/);
+  });
+
   it('offers a repeatable five-minute testing advance', async () => {
     const user = userEvent.setup();
     render(<App />);
