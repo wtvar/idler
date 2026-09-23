@@ -6,6 +6,10 @@ import './styles.css';
 export function App() {
   const [game, setGame] = useState<GameState>(() => createGame());
   const send = (command: Command) => setGame((current) => dispatch(current, command));
+  const simulateFiveMinutes = () => setGame((current) => {
+    const started = current.status === 'preparation' ? dispatch(current, { type: 'START_EXPEDITION' }) : current;
+    return dispatch(started, { type: 'ADVANCE_TIME', milliseconds: 5 * 60 * 1_000 });
+  });
 
   useEffect(() => {
     if (game.status !== 'active') return;
@@ -55,7 +59,7 @@ export function App() {
     </section>
     {game.roomType === 'combat' && game.enemy && <section className="panel combat-state" aria-label="Combat state"><span className="label">COMBAT STATE</span><p>Target policy: {game.combat.targetPolicy}</p><p>Next Hero attack: {Math.max(0, game.hero.attackInterval - game.combat.heroAttackProgress)} ms</p><p>Statuses: {game.combat.heroStatuses.length + game.combat.enemyStatuses.length || 'none'}</p></section>}
     {game.outcome && <section className="panel" aria-label="Expedition outcome"><span className="label">EXPEDITION OUTCOME</span><h2>{game.outcome.result}</h2><p>Room reached: {game.outcome.roomReached} · committed {game.outcome.committed.experience} XP and {game.outcome.committed.currency} currency</p><p>Lost from the incomplete Room: {game.outcome.lost.experience} XP and {game.outcome.lost.currency} currency.</p><p>{game.outcome.result === 'defeated' ? game.outcome.willRestart ? `Recovery: ${Math.ceil(game.recoveryRemainingMilliseconds / 1000)}s remaining; the Area will restart automatically.` : `Recovery: ${Math.ceil(game.recoveryRemainingMilliseconds / 1000)}s remaining; automatic repeat is stopped.` : 'No Recovery is required.'}</p></section>}
-    <section className="controls" aria-label="Expedition commands"><button onClick={() => send({ type: 'START_EXPEDITION' })} disabled={!canStart}>Start Expedition</button><button className="secondary" onClick={() => send({ type: 'WITHDRAW' })} disabled={game.status !== 'active'}>Withdraw</button>{game.status === 'recovery' && <button className="secondary" onClick={() => send({ type: 'STOP_AUTO_REPEAT' })} disabled={!game.autoRepeat}>Stop automatic repeat</button>}<span className="muted">{game.status === 'active' ? 'The Hero is acting automatically.' : game.status === 'recovery' ? 'Recovery is advancing on the controlled clock.' : 'Choose Start Expedition when ready.'}</span></section>
+    <section className="controls" aria-label="Expedition commands"><button onClick={() => send({ type: 'START_EXPEDITION' })} disabled={!canStart}>Start Expedition</button><button className="secondary" onClick={() => send({ type: 'WITHDRAW' })} disabled={game.status !== 'active'}>Withdraw</button>{game.status === 'recovery' && <button className="secondary" onClick={() => send({ type: 'STOP_AUTO_REPEAT' })} disabled={!game.autoRepeat}>Stop automatic repeat</button>}<button className="secondary" onClick={simulateFiveMinutes}>Simulate 5 minutes</button><span className="muted">{game.status === 'active' ? 'The Hero is acting automatically.' : game.status === 'recovery' ? 'Recovery is advancing on the controlled clock.' : 'Choose Start Expedition when ready.'}</span></section>
     <section className="panel log"><span className="label">RECENT OUTCOMES</span>{game.events.slice().reverse().map((item) => <p key={item.id}>{item.message}</p>)}</section>
   </main>;
 }

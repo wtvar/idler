@@ -31,4 +31,14 @@ describe('playable browser shell', () => {
     expect(screen.getByRole('button', { name: /Remove Measured Strike for Expedition/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Level up Measured Strike/ })).toBeInTheDocument();
   });
+
+  it('offers a repeatable five-minute testing advance', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const advance = screen.getByRole('button', { name: 'Simulate 5 minutes' });
+    await user.click(advance);
+    expect(screen.getByText('Level 1 · 30 XP')).toBeInTheDocument();
+    await user.click(advance);
+    expect(screen.getByText('Level 1 · 60 XP')).toBeInTheDocument();
+  });
 });
