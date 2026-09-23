@@ -43,10 +43,21 @@ describe('deterministic simulation boundary', () => {
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 4_000 });
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 3_000 });
-    expect(game.status).toBe('completed');
-    expect(game.roomType).toBe('complete');
-    expect(game.committed).toEqual({ experience: 30, currency: 6 });
-    expect(game.events.at(-1)?.message).toContain('Expedition completed');
+    expect(game.status).toBe('active');
+    expect(game.roomIndex).toBe(0);
+    expect(game.committed).toEqual({ experience: 0, currency: 0 });
+    expect(game.outcome).toMatchObject({ result: 'completed', committed: { experience: 30, currency: 6 } });
+    expect(game.events.some(({ message }) => message.includes('Expedition completed'))).toBe(true);
+  });
+
+  it('returns to Preparation after completion when automatic repeat is stopped', () => {
+    let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 7_100 });
+    expect(game.status).toBe('preparation');
+    expect(game.outcome?.result).toBe('completed');
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    expect(game.status).toBe('active');
   });
 
   it('regenerates resources during Combat and applies the Empty Room effect', () => {

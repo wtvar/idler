@@ -193,6 +193,8 @@ function advance(state: GameState, milliseconds: number): GameState {
     if (next.roomType === 'complete') {
       next = { ...next, outcome: outcome(next, 'completed', 0, false) };
       next = addEvent(next, 'Expedition completed. All Rooms are secured.');
+      if (next.autoRepeat) next = restartExpedition(next, 'The selected Area automatically restarts from Room 1.');
+      else next = { ...next, status: 'preparation' as const };
       break;
     }
   }
@@ -201,7 +203,7 @@ function advance(state: GameState, milliseconds: number): GameState {
   return next;
 }
 
-function restartExpedition(state: GameState): GameState {
+function restartExpedition(state: GameState, message: string): GameState {
   const fresh = enterRoom({
     ...state,
     status: 'active',
@@ -209,14 +211,14 @@ function restartExpedition(state: GameState): GameState {
     recoveryRemainingMilliseconds: 0,
     hero: { ...state.hero, health: state.hero.maxHealth },
   }, 0);
-  return addEvent(fresh, 'Recovery complete. The selected Area automatically restarts from Room 1.');
+  return addEvent(fresh, message);
 }
 
 function advanceRecovery(state: GameState, milliseconds: number): GameState {
   const remaining = Math.max(0, state.recoveryRemainingMilliseconds - milliseconds);
   if (remaining > 0) return { ...state, elapsedMilliseconds: state.elapsedMilliseconds + milliseconds, recoveryRemainingMilliseconds: remaining };
   const recovered = { ...state, elapsedMilliseconds: state.elapsedMilliseconds + milliseconds, recoveryRemainingMilliseconds: 0 };
-  if (state.autoRepeat) return restartExpedition(recovered);
+  if (state.autoRepeat) return restartExpedition(recovered, 'Recovery complete. The selected Area automatically restarts from Room 1.');
   return addEvent({ ...recovered, status: 'preparation', hero: { ...recovered.hero, health: recovered.hero.maxHealth } }, 'Recovery complete. Automatic repeat is stopped; the Area is ready for Preparation.');
 }
 
