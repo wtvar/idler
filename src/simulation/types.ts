@@ -186,6 +186,19 @@ export type SimulationBatch = {
   report: BalanceReport;
 };
 
+export type OfflineSummary = {
+  requestedMilliseconds: number;
+  elapsedMilliseconds: number;
+  completedRooms: number;
+  outcomes: { completed: number; withdrawn: number; defeated: number };
+  rewards: { experience: number; currency: number };
+  recoveryEvents: number;
+  capped: boolean;
+  skippedMilliseconds: number;
+};
+
+export type OfflineAdvanceResult = { state: GameState; summary: OfflineSummary };
+
 export type BalanceReport = {
   scenario: string;
   version: string;

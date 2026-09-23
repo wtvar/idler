@@ -16,6 +16,8 @@ Open the local URL Vite prints, usually `http://localhost:5173`. Stop it with `C
 
 Progress saves automatically in the browser. Developer save tools in Settings can export a save as text or import one.
 
+When you return later, an active Expedition or Recovery advances automatically for up to eight hours. The Offline Summary shows what happened.
+
 Run checks with `npm test`, or check types with `npm run typecheck`.
 
 Complete a Room to receive identified Items. Inspect and equip them in the Equipment & Loot panel between Expeditions.

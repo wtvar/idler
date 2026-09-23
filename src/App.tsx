@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { availableInventorySpace, compareItem, createGame, dispatch, getAreaMap, inventoryCapacity, isSkillEligible, itemStats } from './simulation/simulation';
 import { browserSavePersistence, SaveError, SaveStore, serializeSave } from './simulation/save';
-import type { Command, EquipmentPosition, GameState, Item, SkillDefinition, TargetPolicy } from './simulation/types';
+import type { Command, EquipmentPosition, GameState, Item, OfflineSummary, SkillDefinition, TargetPolicy } from './simulation/types';
 import './styles.css';
 
 function formatEventTime(timestampMilliseconds: number): string {
@@ -14,9 +14,18 @@ function formatEventTime(timestampMilliseconds: number): string {
 
 export function App() {
   const saveStore = useRef(new SaveStore(browserSavePersistence())).current;
+  const initialOfflineSummary = useRef<OfflineSummary | null>(null);
   const [game, setGame] = useState<GameState>(() => {
-    try { return saveStore.load() ?? createGame(); } catch { return createGame(); }
+    try {
+      const loaded = saveStore.loadWithOffline();
+      if (loaded) {
+        initialOfflineSummary.current = loaded.summary;
+        return loaded.state;
+      }
+      return createGame();
+    } catch { return createGame(); }
   });
+  const [offlineSummary, setOfflineSummary] = useState<OfflineSummary | null>(() => initialOfflineSummary.current);
   const [inspectedItemId, setInspectedItemId] = useState<string | null>(null);
   const [saveText, setSaveText] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
@@ -49,6 +58,7 @@ export function App() {
   const importSave = () => {
     try {
       setGame(saveStore.import(saveText));
+      setOfflineSummary(null);
       setSaveMessage('Save imported successfully.');
     } catch (error) {
       setSaveMessage(error instanceof SaveError ? error.message : 'Save could not be imported.');
@@ -165,6 +175,7 @@ export function App() {
     {game.outcome && <details className="panel detail-panel" open><summary>Expedition outcome</summary><section aria-label="Expedition outcome" aria-live="polite"><span className="label">EXPEDITION OUTCOME</span><h2>{game.outcome.result}</h2><p>Room reached: {game.outcome.roomReached} · committed {game.outcome.committed.experience} XP and {game.outcome.committed.currency} currency</p><p>Lost from the incomplete Room: {game.outcome.lost.experience} XP and {game.outcome.lost.currency} currency.</p><p>Consumables used: {Object.entries(game.outcome.consumables.potionsUsed).map(([kind, count]) => `${count} ${kind} Potion${count === 1 ? '' : 's'}`).join(' · ') || 'none'}{game.outcome.consumables.timedBuff ? ` · timed buff: ${game.outcome.consumables.timedBuff}` : ''}</p><p>{game.outcome.result === 'defeated' ? game.outcome.willRestart ? `Recovery: ${Math.ceil(game.recoveryRemainingMilliseconds / 1000)}s remaining; the Area will restart automatically.` : `Recovery: ${Math.ceil(game.recoveryRemainingMilliseconds / 1000)}s remaining; automatic repeat is stopped.` : 'No Recovery is required.'}</p></section></details>}
     <section className="controls" aria-label="Expedition commands"><button onClick={() => send({ type: 'START_EXPEDITION' })} disabled={!canStart}>Start Expedition</button><button className="secondary" onClick={() => send({ type: 'WITHDRAW' })} disabled={game.status !== 'active'}>Withdraw</button>{game.status === 'recovery' && <button className="secondary" onClick={() => send({ type: 'STOP_AUTO_REPEAT' })} disabled={!game.autoRepeat}>Stop automatic repeat</button>}<button className="secondary" onClick={simulateFiveMinutes}>Simulate 5 minutes</button><span className="muted">{game.status === 'active' ? 'The Hero is acting automatically.' : game.status === 'recovery' ? 'Recovery is advancing on the controlled clock.' : 'Choose Start Expedition when ready.'}</span></section>
     <section className="panel log" id="history" aria-label="Recent outcomes"><span className="label">RECENT OUTCOMES</span><div className="log-entries" aria-live="polite">{game.events.slice().reverse().map((item) => <p key={item.id}><time dateTime={`PT${item.timestampMilliseconds / 1_000}S`}>{formatEventTime(item.timestampMilliseconds)}</time><span>{item.message}</span></p>)}</div></section>
+    {offlineSummary && offlineSummary.requestedMilliseconds > 0 && <section className="panel" aria-label="Offline Summary"><span className="label">OFFLINE SUMMARY</span><h2>{Math.floor(offlineSummary.elapsedMilliseconds / 60_000)}m {Math.floor(offlineSummary.elapsedMilliseconds % 60_000 / 1_000)}s offline progress</h2><p>{offlineSummary.completedRooms} Rooms completed · {offlineSummary.outcomes.completed} completed Expeditions · {offlineSummary.outcomes.defeated} Defeats · {offlineSummary.recoveryEvents} Recovery events</p><p>{offlineSummary.rewards.experience} XP and {offlineSummary.rewards.currency} currency committed{offlineSummary.capped ? ' · work capped at eight hours' : ''}{offlineSummary.skippedMilliseconds > 0 ? ` · ${offlineSummary.skippedMilliseconds} ms skipped` : ''}.</p></section>}
     <section className="panel settings" id="settings" aria-label="Settings"><span className="label">SETTINGS</span><h2>Expedition preferences</h2><p className="muted">The controlled clock and automatic Expedition behavior are shown here while settings are being expanded.</p><p>Automatic repeat: {game.autoRepeat ? 'on' : 'off'} · Controlled time: enabled</p><div className="save-controls" aria-label="Developer save tools"><h3>Developer save tools</h3><textarea aria-label="Save data" value={saveText} onChange={(event) => setSaveText(event.target.value)} placeholder="Export a save or paste one here" rows={4} /><div><button className="secondary" onClick={exportSave}>Export Save</button><button className="secondary" onClick={importSave} disabled={!saveText.trim()}>Import Save</button></div>{saveMessage && <p role="status">{saveMessage}</p>}</div></section>
   </main>;
 }

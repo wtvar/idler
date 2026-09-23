@@ -1,11 +1,12 @@
 import { createGame } from './simulation';
-import type { GameState } from './types';
+import { advanceOffline } from './offline';
+import type { GameState, OfflineAdvanceResult } from './types';
 
 export const SAVE_VERSION = 2;
 export const SAVE_FORMAT = 'idler-save';
 export const SAVE_STORAGE_KEY = 'idler.save';
 
-type SaveEnvelope = { format: typeof SAVE_FORMAT; version: number; state: GameState };
+type SaveEnvelope = { format: typeof SAVE_FORMAT; version: number; state: GameState; savedAtMilliseconds?: number };
 
 export interface SavePersistence {
   read(): string | null;
@@ -85,8 +86,10 @@ function migrate(value: unknown): SaveEnvelope {
   return { format: SAVE_FORMAT, version: SAVE_VERSION, state: transientSafeState(migratedState) };
 }
 
-export function serializeSave(state: GameState): string {
-  return JSON.stringify({ format: SAVE_FORMAT, version: SAVE_VERSION, state: transientSafeState(state) } satisfies SaveEnvelope);
+export function serializeSave(state: GameState, savedAtMilliseconds = 0): string {
+  const envelope: SaveEnvelope = { format: SAVE_FORMAT, version: SAVE_VERSION, state: transientSafeState(state) };
+  if (savedAtMilliseconds > 0) envelope.savedAtMilliseconds = savedAtMilliseconds;
+  return JSON.stringify(envelope);
 }
 
 export function deserializeSave(raw: string): GameState {
@@ -110,8 +113,18 @@ export class SaveStore {
     return raw === null ? null : deserializeSave(raw);
   }
 
-  save(state: GameState): void {
-    this.persistence.write(serializeSave(state));
+  loadWithOffline(nowMilliseconds = Date.now()): OfflineAdvanceResult | null {
+    const raw = this.persistence.read();
+    if (raw === null) return null;
+    const state = deserializeSave(raw);
+    let savedAt: unknown;
+    try { savedAt = (JSON.parse(raw) as { savedAtMilliseconds?: unknown }).savedAtMilliseconds; } catch { savedAt = undefined; }
+    const elapsed = typeof savedAt === 'number' && Number.isFinite(savedAt) ? Math.max(0, nowMilliseconds - savedAt) : 0;
+    return advanceOffline(state, elapsed);
+  }
+
+  save(state: GameState, savedAtMilliseconds = Date.now()): void {
+    this.persistence.write(serializeSave(state, savedAtMilliseconds));
   }
 
   export(state: GameState): string {

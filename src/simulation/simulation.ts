@@ -382,7 +382,9 @@ function enterRoom(state: GameState, roomIndex: number): GameState {
   const champion = room.type === 'combat' && (room.championChance ?? 0) > 0
     && ((Math.abs(state.seed * 31 + roomIndex * 17 + (state.areaProgress[state.selectedAreaId]?.completions ?? 0) * 13) % 1000) / 1000) < (room.championChance ?? 0);
   const enemy = room.type === 'combat' ? { name: champion ? `Champion ${room.enemy.name}` : room.enemy.name, health: Math.round(room.enemy.health * (champion ? 1.5 : 1)), maxHealth: Math.round(room.enemy.health * (champion ? 1.5 : 1)), ...(champion ? { champion: true } : {}) } : null;
-  const roomCombat = combatFor(room.type === 'combat' ? room.enemy.attack * (champion ? 1.25 : 1) : 0, room.type === 'combat' ? (room.enemy.defense ?? 0) * (champion ? 1.25 : 1) : 0, state.progression, state.equipment);
+  const authoredAttack = room.type === 'combat' ? room.enemy.attack * (champion ? 1.25 : 1) : 0;
+  const enemyAttack = state.combat.enemyAttack > authoredAttack ? state.combat.enemyAttack : authoredAttack;
+  const roomCombat = combatFor(enemyAttack, room.type === 'combat' ? (room.enemy.defense ?? 0) * (champion ? 1.25 : 1) : 0, state.progression, state.equipment);
   return {
     ...state,
     roomIndex,

@@ -60,4 +60,17 @@ describe('versioned SaveStore', () => {
     expect(store.import(exported).seed).toBe(game.seed);
     expect(store.load()).toEqual(game);
   });
+
+  it('advances an active saved Expedition by the time away when it returns', () => {
+    const persistence = memoryPersistence();
+    const store = new SaveStore(persistence);
+    const started = dispatch(createGame(), { type: 'START_EXPEDITION' });
+    store.save(started, 1_000);
+
+    const loaded = store.loadWithOffline(5_500);
+
+    expect(loaded?.summary.elapsedMilliseconds).toBe(4_500);
+    expect(loaded?.summary.completedRooms).toBeGreaterThan(0);
+    expect(loaded?.state.elapsedMilliseconds).toBe(4_500);
+  });
 });
