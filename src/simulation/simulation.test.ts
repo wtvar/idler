@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ITEM_BASES, ITEM_QUALITY_MULTIPLIERS } from './content';
-import { compareItem, createGame, dispatch, equipmentStats, generateItem, selectTarget } from './simulation';
+import { acceptLoot, availableInventorySpace, compareItem, createGame, dispatch, equipmentStats, generateItem, inventoryCapacity, selectTarget } from './simulation';
+import type { GameState } from './types';
 
 describe('deterministic simulation boundary', () => {
   it('generates seeded, identified Items with compatible Affixes and authored Exceptional identity', () => {
@@ -53,6 +54,37 @@ describe('deterministic simulation boundary', () => {
     expect(unchanged.equipment).toEqual(activeWithLoot.equipment);
     expect(unchanged.combat).toEqual(activeWithLoot.combat);
     expect(unchanged.hero).toEqual(activeWithLoot.hero);
+  });
+
+  it('bounds Inventory and makes overflow keep the stronger eligible Item', () => {
+    const weaker = { ...generateItem(2, 1, 1), id: 'weaker', slot: 'weapon' as const, quality: 'Common' as const, baseStats: { attack: 4 }, affixes: [] };
+    const stronger = { ...generateItem(2, 2, 1), id: 'stronger', slot: 'weapon' as const, quality: 'Epic' as const, baseStats: { attack: 4 }, affixes: [] };
+    const filler = Array.from({ length: inventoryCapacity() - 1 }, (_, index) => ({ ...weaker, id: `filler-${index}`, slot: 'helm' as const, baseStats: { maxHealth: 8 } }));
+    let game: GameState = { ...createGame(), status: 'preparation', inventory: [...filler, weaker] };
+
+    expect(game.inventory).toHaveLength(inventoryCapacity());
+    expect(availableInventorySpace(game)).toBe(0);
+    const decision = acceptLoot(game.inventory, stronger);
+    expect(decision.inventory).toHaveLength(inventoryCapacity());
+    expect(decision.inventory).toContainEqual(stronger);
+    expect(decision.inventory).not.toContainEqual(weaker);
+  });
+
+  it('protects Exceptional Items during overflow and makes Salvage explicit', () => {
+    const exceptional = generateItem(7, 0, 0);
+    const ordinary = { ...generateItem(3, 1, 1), id: 'ordinary', exceptional: false };
+    let game: GameState = { ...createGame(), status: 'preparation', inventory: Array.from({ length: inventoryCapacity() }, (_, index) => ({ ...ordinary, id: index === 0 ? exceptional.id : `ordinary-${index}`, exceptional: index === 0 })) };
+    game = dispatch(game, { type: 'SALVAGE_ITEM', itemId: exceptional.id });
+    expect(game.inventory).toHaveLength(inventoryCapacity());
+    expect(game.inventory.some((item) => item.id === exceptional.id)).toBe(true);
+    expect(game.events.at(-1)?.message).toContain('cannot be salvaged');
+
+    game = dispatch(game, { type: 'SALVAGE_ITEM', itemId: 'ordinary-1' });
+    expect(game.inventory).toHaveLength(inventoryCapacity() - 1);
+    expect(game.currency).toBeGreaterThan(0);
+    const currencyAfterSalvage = game.currency;
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    expect(game.currency).toBe(currencyAfterSalvage);
   });
 
   it('invests in eligible Skills, limits Preparation to four Active Skills, and changes Combat', () => {

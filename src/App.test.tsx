@@ -54,4 +54,15 @@ describe('playable browser shell', () => {
     await user.click(screen.getByRole('button', { name: 'Equip' }));
     expect(screen.getByText(/17 Defense/)).toBeInTheDocument();
   });
+
+  it('explains Inventory space and offers deliberate Salvage for ordinary Items', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Simulate 5 minutes' }));
+    await user.click(screen.getByRole('button', { name: 'Withdraw' }));
+    await user.click(screen.getByRole('button', { name: /Meadowguard Mail/ }));
+
+    expect(screen.getByText(/Inventory: \d+\/12 Items/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Salvage for currency' })).toBeDisabled();
+  });
 });

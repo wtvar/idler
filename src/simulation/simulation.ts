@@ -10,6 +10,7 @@ const HERO_MANA_REGENERATION = 2;
 const HERO_HEALTH_REGENERATION = 1;
 const RECOVERY_MILLISECONDS = 3_000;
 const MAX_LEVEL = 100;
+export const INVENTORY_CAPACITY = 12;
 const XP_PER_LEVEL = 100;
 const LEVEL_REWARDS = { attributePoints: 2, skillPoints: 1 };
 const STARTER_ACTIVE_SKILLS = ['physical-strike', 'tank-guard', 'general-challenge', 'magic-bolt'];
@@ -42,6 +43,55 @@ export function compareItem(item: Item, equipment: Equipment): Item[] {
     return equipped ? [equipped] : [];
   }
   return [equipment.ring1, equipment.ring2].filter((ring): ring is Item => ring !== null);
+}
+
+const QUALITY_RANK: Record<ItemQuality, number> = { Common: 1, Uncommon: 2, Rare: 3, Epic: 4, Legendary: 5 };
+
+export function inventoryCapacity(): number {
+  return INVENTORY_CAPACITY;
+}
+
+export function availableInventorySpace(state: GameState): number {
+  return Math.max(0, INVENTORY_CAPACITY - state.inventory.length);
+}
+
+function usefulItemScore(item: Item): number {
+  const stats = itemStats(item);
+  if (item.slot === 'weapon' || item.slot === 'gloves') return stats.attack;
+  if (item.slot === 'boots') return -stats.attackInterval;
+  if (item.slot === 'helm' || item.slot === 'chest') return stats.maxHealth + stats.defense * 2;
+  if (item.slot === 'ring') return stats.attack + stats.maxMana + stats.maxHealth + stats.defense;
+  return stats.maxMana + stats.attack + stats.maxHealth + stats.defense;
+}
+
+function compareItemStrength(candidate: Item, existing: Item): number {
+  const qualityDifference = QUALITY_RANK[candidate.quality] - QUALITY_RANK[existing.quality];
+  if (qualityDifference !== 0) return qualityDifference;
+  const usefulDifference = usefulItemScore(candidate) - usefulItemScore(existing);
+  return usefulDifference === 0 ? 0 : usefulDifference > 0 ? 1 : -1;
+}
+
+export function acceptLoot(inventory: Item[], item: Item): { inventory: Item[]; message: string } {
+  if (inventory.length < INVENTORY_CAPACITY) {
+    return { inventory: [...inventory, item], message: `${item.name} was added to Inventory (${INVENTORY_CAPACITY - inventory.length - 1} space remaining).` };
+  }
+  const eligible = inventory
+    .map((candidate, index) => ({ candidate, index }))
+    .filter(({ candidate }) => !candidate.exceptional && (item.exceptional || candidate.slot === item.slot));
+  const weakest = eligible.reduce<{ candidate: Item; index: number } | undefined>((weakestItem, current) => {
+    if (!weakestItem || compareItemStrength(current.candidate, weakestItem.candidate) < 0) return current;
+    return weakestItem;
+  }, undefined);
+  if (!weakest || compareItemStrength(item, weakest.candidate) <= 0) {
+    return { inventory, message: `${item.name} was not kept: Inventory is full and the existing eligible Item is at least as strong. No Item was discarded.` };
+  }
+  const next = [...inventory];
+  next[weakest.index] = item;
+  return { inventory: next, message: `${item.name} was kept over ${weakest.candidate.name}: the weaker eligible Item was discarded because Inventory was full.` };
+}
+
+function salvageValue(item: Item): number {
+  return QUALITY_RANK[item.quality];
 }
 
 function seededValue(seed: number, index: number): number {
@@ -155,6 +205,7 @@ export function createGame(seed = 1, options: { startingHealth?: number; enemyAt
     roomType: room.type,
     hero: { name: 'Ari', health: options.startingHealth ?? 100, ...derivedHero(progression, equipment) },
     enemy: room.type === 'combat' ? { name: room.enemy.name, health: room.enemy.health, maxHealth: room.enemy.health } : null,
+    currency: 0,
     committed: { experience: 0, currency: 0 },
     recoveryRemainingMilliseconds: 0,
     autoRepeat: true,
@@ -271,10 +322,11 @@ function beginRecovery(state: GameState): GameState {
 function commitRoom(state: GameState): GameState {
   const room = FIRST_AREA.rooms[state.roomIndex];
   const newItem = generateItem(state.seed, state.nextItemId, state.roomIndex);
+  const lootDecision = acceptLoot(state.inventory, newItem);
   let next = {
     ...state,
     committed: { experience: state.committed.experience + room.experience, currency: state.committed.currency + room.currency },
-    inventory: [...state.inventory, newItem],
+    inventory: lootDecision.inventory,
     nextItemId: state.nextItemId + 1,
   };
   const progression = { ...next.progression, experience: next.progression.experience + room.experience };
@@ -286,7 +338,7 @@ function commitRoom(state: GameState): GameState {
     levelMessages.push(`Level ${progression.level} reached: ${LEVEL_REWARDS.attributePoints} Attribute points and ${LEVEL_REWARDS.skillPoints} Skill point available.`);
   }
   next = { ...next, progression };
-  return refreshProgressionPresentation(next, levelMessages);
+  return addEvent(refreshProgressionPresentation(next, levelMessages), lootDecision.message);
 }
 
 function expireStatuses(statuses: StatusEffect[]): StatusEffect[] {
@@ -424,6 +476,18 @@ function equipItem(state: GameState, itemId: string, requestedSlot?: EquipmentPo
   });
 }
 
+function salvageItem(state: GameState, itemId: string): GameState {
+  const item = state.inventory.find((candidate) => candidate.id === itemId);
+  if (!item) return state;
+  if (item.exceptional) return addEvent(state, `${item.name} is Exceptional and cannot be salvaged.`);
+  const value = salvageValue(item);
+  return addEvent({
+    ...state,
+    inventory: state.inventory.filter((candidate) => candidate.id !== itemId),
+    currency: state.currency + value,
+  }, `${item.name} was deliberately salvaged for ${value} currency.`);
+}
+
 function canSelectSkill(state: GameState, skillId: string, kind: SkillDefinition['kind']): SkillDefinition | undefined {
   const skill = skillById(state, skillId);
   return skill && skill.kind === kind && (state.progression.skillRanks[skillId] ?? 0) > 0 && isSkillEligible(state.progression, skill) ? skill : undefined;
@@ -512,5 +576,6 @@ export function dispatch(state: GameState, command: Command): GameState {
     return withPreparation(state, { ...state.progression.preparation, skillTargetPolicies: { ...state.progression.preparation.skillTargetPolicies, [skill.id]: command.policy } });
   }
   if (command.type === 'EQUIP_ITEM' && state.status === 'preparation') return equipItem(state, command.itemId, command.equipmentSlot);
+  if (command.type === 'SALVAGE_ITEM' && state.status === 'preparation') return salvageItem(state, command.itemId);
   return state;
 }

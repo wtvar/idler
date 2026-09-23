@@ -13,7 +13,8 @@ export type Command =
   | { type: 'SELECT_ULTIMATE'; skillId: string | null }
   | { type: 'SET_TARGET_POLICY'; policy: TargetPolicy }
   | { type: 'SET_SKILL_TARGET_POLICY'; skillId: string; policy: TargetPolicy }
-  | { type: 'EQUIP_ITEM'; itemId: string; equipmentSlot?: EquipmentPosition };
+  | { type: 'EQUIP_ITEM'; itemId: string; equipmentSlot?: EquipmentPosition }
+  | { type: 'SALVAGE_ITEM'; itemId: string };
 
 export type SkillTree = 'physical' | 'tank' | 'magic' | 'general';
 export type SkillKind = 'active' | 'passive' | 'aura' | 'ultimate' | 'mastery';
@@ -116,6 +117,7 @@ export type GameState = {
   roomType: 'combat' | 'empty' | 'complete';
   hero: { name: string; health: number; maxHealth: number; attack: number; attackInterval: number };
   enemy: { name: string; health: number; maxHealth: number } | null;
+  currency: number;
   committed: { experience: number; currency: number };
   recoveryRemainingMilliseconds: number;
   autoRepeat: boolean;
