@@ -16,6 +16,13 @@ describe('playable browser shell', () => {
     expect(screen.getByRole('button', { name: 'Withdraw' })).toBeEnabled();
   });
 
+  it('shows Area Map states and keeps locked Areas unavailable', () => {
+    render(<App />);
+    expect(screen.getByRole('region', { name: 'Area Map' })).toHaveTextContent('Sunlit Meadow · unlocked');
+    expect(screen.getByRole('button', { name: /Moonlit Grove/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Grove Chapter Boss/ })).toBeDisabled();
+  });
+
   it('exposes Preparation choices and locks them after the Expedition starts', async () => {
     const user = userEvent.setup();
     render(<App />);

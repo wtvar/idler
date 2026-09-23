@@ -1,9 +1,43 @@
 import { describe, expect, it } from 'vitest';
 import { ITEM_BASES, ITEM_QUALITY_MULTIPLIERS } from './content';
-import { acceptLoot, availableInventorySpace, compareItem, createGame, dispatch, equipmentStats, generateItem, inventoryCapacity, selectTarget } from './simulation';
+import { acceptLoot, availableInventorySpace, compareItem, createGame, dispatch, equipmentStats, generateItem, getAreaMap, inventoryCapacity, selectTarget } from './simulation';
 import type { GameState } from './types';
 
 describe('deterministic simulation boundary', () => {
+  it('unlocks Areas sequentially and requires replaying an ordinary Area before its Boss Area', () => {
+    let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 10_000 });
+    expect(game.status).toBe('preparation');
+    expect(getAreaMap(game).map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: 'sunlit-meadow', status: 'completed' },
+      { id: 'moonlit-grove', status: 'unlocked' },
+      { id: 'grove-chapter-boss', status: 'locked' },
+    ]);
+
+    game = dispatch(game, { type: 'SELECT_AREA', areaId: 'moonlit-grove' });
+    expect(game.areaName).toBe('Moonlit Grove');
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 20_000 });
+    expect(getAreaMap(game).find(({ id }) => id === 'grove-chapter-boss')?.status).toBe('locked');
+
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 20_000 });
+    expect(getAreaMap(game).map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: 'sunlit-meadow', status: 'completed' },
+      { id: 'moonlit-grove', status: 'replayable' },
+      { id: 'grove-chapter-boss', status: 'boss' },
+    ]);
+  });
+
+  it('rejects selecting a locked Area and selects an unlocked Area only during Preparation', () => {
+    let game = createGame();
+    expect(dispatch(game, { type: 'SELECT_AREA', areaId: 'grove-chapter-boss' })).toEqual(game);
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    expect(dispatch(game, { type: 'SELECT_AREA', areaId: 'moonlit-grove' })).toEqual(game);
+  });
   it('keeps Potion sizes stackable and consumes Health Potions at the configured threshold', () => {
     let game = createGame();
     expect(game.consumables.potions).toContainEqual({ kind: 'health', size: 'Small', quantity: 3 });

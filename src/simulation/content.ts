@@ -1,6 +1,7 @@
-import type { Affix, EquipmentStats, Item, SkillDefinition } from './types';
+import type { Affix, AreaDefinition, EquipmentStats, Item, SkillDefinition } from './types';
 
 export const FIRST_AREA = {
+  id: 'sunlit-meadow',
   name: 'Sunlit Meadow',
   rooms: [
     { type: 'combat' as const, enemy: { name: 'Meadow Slime', health: 18, attack: 2 }, experience: 10, currency: 2 },
@@ -8,6 +9,26 @@ export const FIRST_AREA = {
     { type: 'combat' as const, enemy: { name: 'Thornback', health: 24, attack: 3, defense: 10 }, experience: 15, currency: 3 },
   ],
 };
+
+export const AREAS: AreaDefinition[] = [
+  { id: FIRST_AREA.id, name: FIRST_AREA.name, kind: 'ordinary', unlock: { type: 'start' }, rooms: FIRST_AREA.rooms, encounterTable: ['Meadow Slime', 'Thornback'] },
+  {
+    id: 'moonlit-grove', name: 'Moonlit Grove', kind: 'ordinary', unlock: { type: 'complete-area', areaId: FIRST_AREA.id, completions: 1 },
+    encounterTable: ['Grove Stag', 'Moonroot Guardian'],
+    rooms: [
+      { type: 'combat', enemy: { name: 'Grove Stag', health: 28, attack: 4, defense: 8 }, experience: 18, currency: 4 },
+      { type: 'empty', durationMilliseconds: 200, healthEffect: 6, manaEffect: 5, experience: 7, currency: 2 },
+      { type: 'combat', enemy: { name: 'Moonroot Guardian', health: 34, attack: 5, defense: 14 }, experience: 24, currency: 5 },
+    ],
+  },
+  {
+    id: 'grove-chapter-boss', name: 'Grove Chapter Boss', kind: 'boss', unlock: { type: 'complete-area', areaId: 'moonlit-grove', completions: 2 },
+    encounterTable: ['Grove Warden'], boss: { name: 'Grove Warden' },
+    rooms: [
+      { type: 'combat', enemy: { name: 'Grove Warden', health: 60, attack: 7, defense: 18 }, experience: 45, currency: 12 },
+    ],
+  },
+];
 
 export const SKILLS: SkillDefinition[] = [
   { id: 'physical-strike', name: 'Measured Strike', tree: 'physical', kind: 'active', unlockLevel: 1, prerequisites: [], maxRank: 20, manaCost: 0, cooldownMilliseconds: 0, description: 'A reliable weapon attack.', damageMultiplier: 1 },

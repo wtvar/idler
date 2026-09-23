@@ -19,3 +19,5 @@ Run checks with `npm test`, or check types with `npm run typecheck`.
 Complete a Room to receive identified Items. Inspect and equip them in the Equipment & Loot panel between Expeditions.
 
 Configure Health and Mana Potion thresholds and select one timed Combat buff in the Preparation panel. Potions are used automatically during Combat; the timed buff ends with its Expedition.
+
+Use the Area Map to select unlocked Areas. Complete an Area once to unlock the next ordinary Area, then replay the preceding Area to unlock its chapter Boss.

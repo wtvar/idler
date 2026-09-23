@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { availableInventorySpace, compareItem, createGame, dispatch, inventoryCapacity, isSkillEligible, itemStats } from './simulation/simulation';
+import { availableInventorySpace, compareItem, createGame, dispatch, getAreaMap, inventoryCapacity, isSkillEligible, itemStats } from './simulation/simulation';
 import type { Command, EquipmentPosition, GameState, Item, SkillDefinition, SkillKind, TargetPolicy } from './simulation/types';
 import './styles.css';
 
@@ -76,6 +76,12 @@ export function App() {
         <p className="muted">Potion cooldowns: Health {Math.ceil(game.combat.potionCooldowns.health / 1000)}s · Mana {Math.ceil(game.combat.potionCooldowns.mana / 1000)}s · active buff: {game.combat.timedBuff?.kind ?? 'none'}</p>
       </div>
       <button className="secondary" onClick={() => send({ type: 'RESPEC_SKILLS' })} disabled={game.status !== 'preparation'}>Free Respec</button>
+    </section>
+    <section className="panel" aria-label="Area Map">
+      <span className="label">AREA MAP</span>
+      <h2>Choose an Area</h2>
+      <div className="area-map">{getAreaMap(game).map((area) => <button className="secondary" key={area.id} onClick={() => send({ type: 'SELECT_AREA', areaId: area.id })} disabled={area.status === 'locked' || game.status !== 'preparation'}>{area.name} · {area.status}{area.completions > 0 ? ` · ${area.completions} completion${area.completions === 1 ? '' : 's'}` : ''}</button>)}</div>
+      <p className="muted">Areas unlock in order. Replay an Area to earn its chapter Boss.</p>
     </section>
     <section className="panel equipment" aria-label="Equipment and Loot">
       <span className="label">EQUIPMENT &amp; LOOT</span>

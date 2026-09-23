@@ -1,5 +1,5 @@
-import { AFFIXES, EXCEPTIONAL_ITEMS, FIRST_AREA, ITEM_BASES, ITEM_QUALITY_MULTIPLIERS, SKILLS } from './content';
-import type { Command, CombatState, Consumables, Equipment, EquipmentPosition, EquipmentStats, Event, ExpeditionOutcome, GameState, Item, ItemQuality, PotionKind, PotionSize, ProgressionState, SkillDefinition, StatusEffect, TargetPolicy, TimedBuffKind } from './types';
+import { AFFIXES, AREAS, EXCEPTIONAL_ITEMS, ITEM_BASES, ITEM_QUALITY_MULTIPLIERS, SKILLS } from './content';
+import type { AreaMapEntry, AreaMapStatus, Command, CombatState, Consumables, Equipment, EquipmentPosition, EquipmentStats, Event, ExpeditionOutcome, GameState, Item, ItemQuality, PotionKind, PotionSize, ProgressionState, SkillDefinition, StatusEffect, TargetPolicy, TimedBuffKind } from './types';
 
 const SIMULATION_VERSION = 'v1-expedition-loop';
 const TICK_MILLISECONDS = 100;
@@ -232,8 +232,37 @@ export function calculateMitigatedDamage(rawDamage: number, mitigation: number):
   return Math.max(1, Math.floor(rawDamage * 100 / (100 + Math.max(0, mitigation))));
 }
 
+function areaById(areaId: string) {
+  return AREAS.find((area) => area.id === areaId);
+}
+
+function selectedArea(state: GameState) {
+  return areaById(state.selectedAreaId) ?? AREAS[0];
+}
+
+function areaIsUnlocked(state: GameState, areaId: string): boolean {
+  const area = areaById(areaId);
+  if (!area) return false;
+  if (area.unlock.type === 'start') return true;
+  return (state.areaProgress[area.unlock.areaId]?.completions ?? 0) >= area.unlock.completions;
+}
+
+export function getAreaMap(state: GameState): AreaMapEntry[] {
+  return AREAS.map((area) => {
+    const completions = state.areaProgress[area.id]?.completions ?? 0;
+    let status: AreaMapStatus = 'locked';
+    if (areaIsUnlocked(state, area.id)) {
+      if (completions === 0) status = area.kind === 'boss' ? 'boss' : 'unlocked';
+      else if (area.kind === 'boss' || completions === 1) status = 'completed';
+      else status = 'replayable';
+    }
+    return { ...area, status, completions };
+  });
+}
+
 export function createGame(seed = 1, options: { startingHealth?: number; enemyAttack?: number } = {}): GameState {
-  const room = FIRST_AREA.rooms[0];
+  const area = AREAS[0];
+  const room = area.rooms[0];
   const progression = emptyProgression();
   const equipment = emptyEquipment();
   return {
@@ -241,8 +270,10 @@ export function createGame(seed = 1, options: { startingHealth?: number; enemyAt
     seed,
     elapsedMilliseconds: 0,
     status: 'preparation',
-    areaName: FIRST_AREA.name,
-    roomCount: FIRST_AREA.rooms.length,
+    areaName: area.name,
+    selectedAreaId: area.id,
+    areaProgress: Object.fromEntries(AREAS.map(({ id }) => [id, { completions: 0 }])),
+    roomCount: area.rooms.length,
     roomIndex: 0,
     roomType: room.type,
     hero: { name: 'Ari', health: options.startingHealth ?? 100, ...derivedHero(progression, equipment) },
@@ -252,7 +283,7 @@ export function createGame(seed = 1, options: { startingHealth?: number; enemyAt
     recoveryRemainingMilliseconds: 0,
     autoRepeat: true,
     outcome: null,
-    events: [event('A new Hero is ready in Sunlit Meadow.', 0, 0)],
+    events: [event(`A new Hero is ready in ${area.name}.`, 0, 0)],
     progression,
     skills: SKILLS,
     reviewQueue: [],
@@ -322,7 +353,8 @@ function refreshProgressionPresentation(state: GameState, levelMessages?: string
 }
 
 function enterRoom(state: GameState, roomIndex: number): GameState {
-  const room = FIRST_AREA.rooms[roomIndex];
+  const area = selectedArea(state);
+  const room = area.rooms[roomIndex];
   if (!room) return { ...state, status: 'completed', roomType: 'complete', enemy: null };
   const enemy = room.type === 'combat' ? { name: room.enemy.name, health: room.enemy.health, maxHealth: room.enemy.health } : null;
   const roomCombat = combatFor(room.type === 'combat' ? room.enemy.attack : 0, room.type === 'combat' ? room.enemy.defense : 0, state.progression, state.equipment);
@@ -336,7 +368,7 @@ function enterRoom(state: GameState, roomIndex: number): GameState {
 }
 
 function currentRoomLoss(state: GameState): { experience: number; currency: number } {
-  const room = FIRST_AREA.rooms[state.roomIndex];
+  const room = selectedArea(state).rooms[state.roomIndex];
   return room ? { experience: room.experience, currency: room.currency } : { experience: 0, currency: 0 };
 }
 
@@ -366,7 +398,7 @@ function beginRecovery(state: GameState): GameState {
 }
 
 function commitRoom(state: GameState): GameState {
-  const room = FIRST_AREA.rooms[state.roomIndex];
+  const room = selectedArea(state).rooms[state.roomIndex];
   const newItem = generateItem(state.seed, state.nextItemId, state.roomIndex);
   const lootDecision = acceptLoot(state.inventory, newItem);
   const potionKind: PotionKind = state.roomIndex % 2 === 0 ? 'health' : 'mana';
@@ -490,7 +522,7 @@ function advance(state: GameState, milliseconds: number): GameState {
     // during the tick get their actual in-simulation timestamp.
     next = { ...next, elapsedMilliseconds: startElapsedMilliseconds + milliseconds - remaining };
     if (next.roomType === 'empty') {
-      const room = FIRST_AREA.rooms[next.roomIndex];
+      const room = selectedArea(next).rooms[next.roomIndex];
       if (room.type !== 'empty') return next;
       if (next.combat.heroAttackProgress + TICK_MILLISECONDS >= room.durationMilliseconds) {
         next = commitRoom(next);
@@ -511,6 +543,7 @@ function advance(state: GameState, milliseconds: number): GameState {
       }
     }
     if (next.roomType === 'complete') {
+      next = { ...next, areaProgress: { ...next.areaProgress, [next.selectedAreaId]: { completions: (next.areaProgress[next.selectedAreaId]?.completions ?? 0) + 1 } } };
       const completedOutcome = outcome(next, 'completed', 0, false);
       next = { ...next, outcome: completedOutcome };
       next = addEvent(next, 'Expedition completed. All Rooms are secured.');
@@ -546,6 +579,23 @@ function endExpeditionInPreparation(state: GameState, expeditionOutcome: Expedit
     outcome: expeditionOutcome,
     combat: { ...state.combat, timedBuff: null, pendingMilliseconds: 0 },
   });
+}
+
+function selectAreaForPreparation(state: GameState, areaId: string): GameState {
+  const area = areaById(areaId);
+  if (!area || !areaIsUnlocked(state, areaId)) return state;
+  const next = enterRoom({
+    ...state,
+    selectedAreaId: area.id,
+    areaName: area.name,
+    roomCount: area.rooms.length,
+    roomIndex: 0,
+    status: 'preparation',
+    outcome: null,
+    committed: { experience: 0, currency: 0 },
+    hero: { ...state.hero, health: state.hero.maxHealth },
+  }, 0);
+  return addEvent(next, `${area.name} selected for the next Expedition.`);
 }
 
 function withPreparation(state: GameState, preparation: ProgressionState['preparation']): GameState {
@@ -598,6 +648,7 @@ function advanceRecovery(state: GameState, milliseconds: number): GameState {
 }
 
 export function dispatch(state: GameState, command: Command): GameState {
+  if (command.type === 'SELECT_AREA' && state.status === 'preparation') return selectAreaForPreparation(state, command.areaId);
   if (command.type === 'START_EXPEDITION' && state.status === 'preparation' && state.progression.preparation.activeSkillIds.length === 4) {
     const selectedBuff = state.progression.preparation.timedBuff;
     const canUseBuff = selectedBuff !== null && state.consumables.timedBuffs[selectedBuff] > 0;
