@@ -652,14 +652,18 @@ export function dispatch(state: GameState, command: Command): GameState {
   if (command.type === 'START_EXPEDITION' && state.status === 'preparation' && state.progression.preparation.activeSkillIds.length === 4) {
     const selectedBuff = state.progression.preparation.timedBuff;
     const canUseBuff = selectedBuff !== null && state.consumables.timedBuffs[selectedBuff] > 0;
-    return addEvent(refreshProgressionPresentation({
+    const started: GameState = {
       ...state,
       status: 'active',
       autoRepeat: true,
       outcome: null,
+      committed: { experience: 0, currency: 0 },
+      roomIndex: 0,
       consumables: canUseBuff ? { ...state.consumables, timedBuffs: { ...state.consumables.timedBuffs, [selectedBuff]: state.consumables.timedBuffs[selectedBuff] - 1 } } : state.consumables,
       combat: { ...state.combat, potionCooldowns: { health: 0, mana: 0 }, potionUses: {}, timedBuff: canUseBuff ? { kind: selectedBuff, remainingMilliseconds: 0 } : null },
-    }), 'Expedition started. Preparation is locked.');
+    };
+    const initialRoom = state.outcome === null && state.roomIndex === 0 ? started : enterRoom(started, 0);
+    return addEvent(refreshProgressionPresentation(initialRoom), 'Expedition started. Preparation is locked.');
   }
   if (command.type === 'ADVANCE_TIME') return advance(state, command.milliseconds);
   if (command.type === 'WITHDRAW' && state.status === 'active') {

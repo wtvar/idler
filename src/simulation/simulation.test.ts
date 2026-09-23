@@ -397,15 +397,18 @@ describe('deterministic simulation boundary', () => {
 
   it('withdraws after the current step and summarizes committed and lost progress', () => {
     let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 2_000 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 4_200 });
     game = dispatch(game, { type: 'WITHDRAW' });
 
     expect(game.status).toBe('preparation');
-    expect(game.committed).toEqual({ experience: 0, currency: 0 });
-    expect(game.outcome).toMatchObject({ result: 'withdrawn', roomReached: 1, lost: { experience: 10, currency: 2 } });
+    expect(game.committed).toEqual({ experience: 10, currency: 2 });
+    expect(game.outcome).toMatchObject({ result: 'withdrawn', roomReached: 2, lost: { experience: 5, currency: 1 } });
     expect(game.events.at(-1)?.message).toContain('incomplete Room rewards were lost');
     game = dispatch(game, { type: 'START_EXPEDITION' });
     expect(game.status).toBe('active');
+    expect(game.roomIndex).toBe(0);
+    expect(game.committed).toEqual({ experience: 0, currency: 0 });
+    expect(game.enemy).toMatchObject({ name: 'Meadow Slime', health: 18, maxHealth: 18 });
   });
 
   it('enters Recovery on defeat and automatically restarts the selected Area', () => {
