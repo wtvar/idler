@@ -1,7 +1,7 @@
 import { AFFIXES, AREAS, EXCEPTIONAL_ITEMS, ITEM_BASES, ITEM_QUALITY_MULTIPLIERS, SKILLS } from './content';
 import type { AreaMapEntry, AreaMapStatus, Command, CombatState, Consumables, Equipment, EquipmentPosition, EquipmentStats, Event, ExpeditionOutcome, GameState, Item, ItemQuality, PotionKind, PotionSize, ProgressionState, SkillDefinition, StatusEffect, TargetPolicy, TimedBuffKind } from './types';
 
-const SIMULATION_VERSION = 'v1-expedition-loop';
+export const SIMULATION_VERSION = 'v1-expedition-loop';
 const TICK_MILLISECONDS = 100;
 const HERO_ATTACK_INTERVAL = 1_400;
 const ENEMY_ATTACK_INTERVAL = 1_500;

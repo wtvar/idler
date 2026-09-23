@@ -159,3 +159,47 @@ export type GameState = {
   nextItemId: number;
   consumables: Consumables;
 };
+
+export type SimulationScenario = {
+  name: string;
+  version: string;
+  seed: number;
+  durationMilliseconds: number;
+  commands?: Command[];
+  createGameOptions?: { startingHealth?: number; enemyAttack?: number };
+};
+
+export type SimulationResult = {
+  scenario: string;
+  version: string;
+  seed: number;
+  durationMilliseconds: number;
+  outcome: ExpeditionOutcome | null;
+  progression: Pick<ProgressionState, 'level' | 'experience' | 'attributePoints' | 'skillPoints'>;
+  combat: Pick<CombatState, 'heroAttackProgress' | 'enemyAttackProgress' | 'heroMana' | 'maxMana' | 'heroManaRegeneration' | 'heroHealthRegeneration' | 'heroDefense' | 'potionUses'>;
+  loot: { inventoryCount: number; itemIds: string[]; items: Array<Pick<Item, 'id' | 'slot' | 'quality' | 'exceptional'>>; currency: number; committedCurrency: number };
+  state: GameState;
+};
+
+export type SimulationBatch = {
+  results: SimulationResult[];
+  report: BalanceReport;
+};
+
+export type BalanceReport = {
+  scenario: string;
+  version: string;
+  count: number;
+  completed: number;
+  withdrawn: number;
+  defeated: number;
+  incomplete: number;
+  completionRate: number;
+  averageDurationMilliseconds: number;
+  averageCommittedExperience: number;
+  averageCommittedCurrency: number;
+  lootItemCount: number;
+};
+
+export type ContentValidationIssue = { code: string; message: string; path?: string };
+export type ContentValidationResult = { valid: boolean; issues: ContentValidationIssue[] };
