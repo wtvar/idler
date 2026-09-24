@@ -23,6 +23,11 @@ describe('bounded offline advancement', () => {
     expect(result.summary.recoveryEvents).toBe(2);
     expect(result.state.status).toBe('recovery');
     expect(result.state.roomIndex).toBe(0);
+    expect(result.summary.outcomeDetails[0]).toMatchObject({
+      result: 'defeated',
+      recoveryMilliseconds: 3_000,
+      willRestart: true,
+    });
   });
 
   it('reports completed Rooms, outcomes, and committed rewards', () => {
@@ -32,6 +37,12 @@ describe('bounded offline advancement', () => {
     expect(result.summary.completedRooms).toBeGreaterThanOrEqual(3);
     expect(result.summary.outcomes.completed).toBeGreaterThanOrEqual(1);
     expect(result.summary.rewards).toEqual({ experience: 30, currency: 6 });
+    expect(result.summary.outcomeDetails[0]).toMatchObject({
+      result: 'completed',
+      committed: { experience: 30, currency: 6 },
+      lost: { experience: 0, currency: 0 },
+      willRestart: true,
+    });
   });
 
   it('matches active controlled-clock advancement in the same steps', () => {

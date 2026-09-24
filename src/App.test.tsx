@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup } from '@testing-library/react';
@@ -37,7 +37,7 @@ describe('playable browser shell', () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: 'Sunlit Meadow' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Start Expedition' }));
-    expect(screen.getByText(/Preparation is locked/)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Preparation' })).toHaveTextContent(/Preparation is locked/);
     expect(screen.getByRole('button', { name: 'Withdraw' })).toBeEnabled();
   });
 
@@ -99,11 +99,14 @@ describe('playable browser shell', () => {
     await user.click(screen.getByText('Combat detail'));
     await user.click(screen.getByRole('button', { name: 'Withdraw' }));
     expect(screen.getByRole('region', { name: 'Expedition outcome' })).toHaveTextContent(/Recovery|No Recovery/);
+    await user.click(screen.getByRole('link', { name: 'History' }));
+    expect(screen.getByRole('region', { name: 'Recent outcomes' })).toHaveTextContent('Expedition withdrawn · Sunlit Meadow');
   });
 
   it('offers a repeatable five-minute testing advance', async () => {
     const user = userEvent.setup();
     render(<App />);
+    await user.click(screen.getByRole('checkbox', { name: 'Automatically repeat Expeditions' }));
     const advance = screen.getByRole('button', { name: 'Simulate 5 minutes' });
     await user.click(advance);
     expect(screen.getByText('Level 1 · 30 XP')).toBeInTheDocument();
@@ -122,6 +125,51 @@ describe('playable browser shell', () => {
     expect(screen.getByText(/Compared with: nothing equipped/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Equip' }));
     expect(screen.getByText(/17 Defense/)).toBeInTheDocument();
+  });
+
+  it('adds newly found Items to the Review queue until they are handled', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('checkbox', { name: 'Automatically repeat Expeditions' }));
+    await user.click(screen.getByRole('button', { name: 'Simulate 5 minutes' }));
+
+    const queue = screen.getByRole('region', { name: 'Review queue' });
+    expect(queue).toHaveTextContent(/Item and Loot decision/);
+    await user.click(within(queue).getAllByRole('link', { name: 'Review Loot' })[0]);
+    expect(screen.getByRole('heading', { name: /Meadowguard Mail/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Keep in Inventory' }));
+    expect(queue).not.toHaveTextContent(/Meadowguard Mail/);
+  });
+
+  it('lets the player change the automatic repeat preference without interrupting Combat', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const autoRepeat = screen.getByRole('checkbox', { name: 'Automatically repeat Expeditions' });
+
+    expect(autoRepeat).toBeChecked();
+    await user.click(autoRepeat);
+    expect(autoRepeat).not.toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Start Expedition' }));
+    expect(autoRepeat).not.toBeChecked();
+    expect(screen.getByRole('status', { name: 'Expedition status' })).toHaveTextContent('active');
+    await user.click(autoRepeat);
+    expect(screen.getByRole('status', { name: 'Expedition status' })).toHaveTextContent('active');
+  });
+
+  it('explains offline outcome rewards, losses, Recovery, and restart status', async () => {
+    const { createGame, dispatch } = await import('./simulation/simulation');
+    const defeated = dispatch(createGame(7, { startingHealth: 1, enemyAttack: 100 }), { type: 'START_EXPEDITION' });
+    window.localStorage.setItem('idler.save', JSON.stringify({
+      format: 'idler-save', version: 2, state: defeated, savedAtMilliseconds: Date.now() - 10_000,
+    }));
+    render(<App />);
+
+    const summary = screen.getByRole('region', { name: 'Offline Summary' });
+    expect(summary).toHaveTextContent('Defeat');
+    expect(summary).toHaveTextContent('XP and');
+    expect(summary).toHaveTextContent('lost');
+    expect(summary).toHaveTextContent('Recovery');
+    expect(summary).toHaveTextContent(/restart/i);
   });
 
   it('explains Inventory space and offers deliberate Salvage for ordinary Items', async () => {

@@ -11,6 +11,8 @@ function emptySummary(requestedMilliseconds: number): OfflineSummary {
     completedRooms: 0,
     outcomes: { completed: 0, withdrawn: 0, defeated: 0 },
     rewards: { experience: 0, currency: 0 },
+    lost: { experience: 0, currency: 0 },
+    outcomeDetails: [],
     recoveryEvents: 0,
     capped: false,
     skippedMilliseconds: requestedMilliseconds,
@@ -30,29 +32,25 @@ export function advanceOffline(state: GameState, requestedMilliseconds: number):
   while (remaining > 0 && (current.status === 'active' || current.status === 'recovery')) {
     const step = Math.min(OFFLINE_STEP_MILLISECONDS, remaining);
     const beforeStatus = current.status;
+    const previousOutcome = current.outcomeHistory.at(-1);
     current = dispatch(current, { type: 'ADVANCE_TIME', milliseconds: step });
+    const latestOutcome = current.outcomeHistory.at(-1);
+    if (latestOutcome && latestOutcome !== previousOutcome) {
+      const outcome = latestOutcome;
+      summary.outcomeDetails.push(outcome);
+      summary.rewards.experience += outcome.committed.experience;
+      summary.rewards.currency += outcome.committed.currency;
+      summary.lost.experience += outcome.lost.experience;
+      summary.lost.currency += outcome.lost.currency;
+      summary.outcomes[outcome.result] += 1;
+      if (outcome.result === 'defeated') summary.recoveryEvents += 1;
+    }
     summary.elapsedMilliseconds += step;
     remaining -= step;
 
     const newEvents = current.events.filter((event) => event.id > lastEventId);
     for (const event of newEvents) {
       if (event.message.includes('Room rewards are committed') || event.message.includes('its rewards are committed')) summary.completedRooms += 1;
-      if (event.message.includes('Expedition completed')) {
-        summary.outcomes.completed += 1;
-        summary.rewards.experience += current.outcome?.committed.experience ?? 0;
-        summary.rewards.currency += current.outcome?.committed.currency ?? 0;
-      }
-      if (event.message.includes('Expedition withdrawn')) {
-        summary.outcomes.withdrawn += 1;
-        summary.rewards.experience += current.outcome?.committed.experience ?? 0;
-        summary.rewards.currency += current.outcome?.committed.currency ?? 0;
-      }
-      if (event.message.includes('Ari was defeated')) {
-        summary.outcomes.defeated += 1;
-        summary.rewards.experience += current.outcome?.committed.experience ?? 0;
-        summary.rewards.currency += current.outcome?.committed.currency ?? 0;
-        summary.recoveryEvents += 1;
-      }
     }
     if (newEvents.length > 0) lastEventId = newEvents.at(-1)?.id ?? lastEventId;
     if (beforeStatus === 'recovery' && current.status === 'preparation') break;

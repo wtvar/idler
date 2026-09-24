@@ -20,6 +20,8 @@ When you return later, an active Expedition or Recovery advances automatically f
 
 Run checks with `npm test`, or check types with `npm run typecheck`.
 
+For first-time browser checks, install Chromium with `npx playwright install chromium`, then run `npm run test:e2e`.
+
 Complete a Room to receive identified Items. Inspect and equip them in the Equipment & Loot panel between Expeditions.
 
 Configure Health and Mana Potion thresholds and select one timed Combat buff in the Preparation panel. Potions are used automatically during Combat; the timed buff ends with its Expedition.
@@ -29,3 +31,5 @@ Use the Area Map to select unlocked Areas. Complete an Area once to unlock the n
 Ordinary Areas can roll weighted Champions with increased rewards. The Region Boss unlocks after Area 20 and requires the displayed currency attempt cost before it can be selected.
 
 Use the Skills navigation to open the dedicated Skill tree view. Each Skill shows its description, Hero-level unlock, prerequisites, rank, and available level/select actions.
+
+Open Settings to turn automatic Expedition repeats on or off. Open History to review recent Expedition events and outcomes.

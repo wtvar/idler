@@ -16,6 +16,8 @@ export type Command =
   | { type: 'ADVANCE_TIME'; milliseconds: number }
   | { type: 'WITHDRAW' }
   | { type: 'STOP_AUTO_REPEAT' }
+  | { type: 'SET_AUTO_REPEAT'; enabled: boolean }
+  | { type: 'MARK_ITEM_REVIEWED'; itemId: string }
   | { type: 'SPEND_ATTRIBUTE'; attribute: Attribute }
   | { type: 'INVEST_SKILL'; skillId: string }
   | { type: 'RESPEC_SKILLS' }
@@ -123,6 +125,7 @@ export type CombatState = {
 
 export type ExpeditionOutcome = {
   result: 'completed' | 'withdrawn' | 'defeated';
+  areaName: string;
   roomReached: number;
   committed: { experience: number; currency: number };
   lost: { experience: number; currency: number };
@@ -149,6 +152,8 @@ export type GameState = {
   recoveryRemainingMilliseconds: number;
   autoRepeat: boolean;
   outcome: ExpeditionOutcome | null;
+  outcomeHistory: ExpeditionOutcome[];
+  reviewedItemIds: string[];
   events: Event[];
   progression: ProgressionState;
   skills: SkillDefinition[];
@@ -192,6 +197,8 @@ export type OfflineSummary = {
   completedRooms: number;
   outcomes: { completed: number; withdrawn: number; defeated: number };
   rewards: { experience: number; currency: number };
+  lost: { experience: number; currency: number };
+  outcomeDetails: ExpeditionOutcome[];
   recoveryEvents: number;
   capped: boolean;
   skippedMilliseconds: number;

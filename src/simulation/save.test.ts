@@ -42,6 +42,18 @@ describe('versioned SaveStore', () => {
     expect(() => deserializeSave('{"format":"idler-save","version":2,"state":null}')).toThrow(/malformed/i);
   });
 
+  it('rebuilds pending Item review decisions when loading an older save', () => {
+    let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 300_000 });
+    const { outcomeHistory: _outcomeHistory, reviewedItemIds: _reviewedItemIds, ...olderState } = game;
+    const restored = deserializeSave(JSON.stringify({
+      format: 'idler-save', version: 1, state: { ...olderState, reviewQueue: [] },
+    }));
+
+    expect(restored.inventory.length).toBeGreaterThan(0);
+    expect(restored.reviewQueue.some((message) => message.startsWith('Item and Loot decision:'))).toBe(true);
+  });
+
   it('does not replace the current state when import fails', () => {
     const persistence = memoryPersistence();
     const store = new SaveStore(persistence);

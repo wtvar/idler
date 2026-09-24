@@ -12,8 +12,8 @@ export const GOLDEN_SCENARIOS: SimulationScenario[] = [
 type GoldenExpectation = { seed: number; outcome: SimulationResult['outcome']; level: number; experience: number; committedCurrency: number; inventoryCount: number };
 
 const GOLDEN_EXPECTATIONS: GoldenExpectation[] = [
-  { seed: 7, outcome: { result: 'completed', roomReached: 3, committed: { experience: 30, currency: 6 }, lost: { experience: 0, currency: 0 }, recoveryMilliseconds: 0, willRestart: false, consumables: { potionsUsed: {}, timedBuff: null } }, level: 1, experience: 30, committedCurrency: 0, inventoryCount: 3 },
-  { seed: 7, outcome: { result: 'defeated', roomReached: 1, committed: { experience: 0, currency: 0 }, lost: { experience: 10, currency: 2 }, recoveryMilliseconds: 3_000, willRestart: true, consumables: { potionsUsed: { health: 1 }, timedBuff: null } }, level: 1, experience: 0, committedCurrency: 0, inventoryCount: 0 },
+  { seed: 7, outcome: { result: 'completed', areaName: 'Sunlit Meadow', roomReached: 3, committed: { experience: 30, currency: 6 }, lost: { experience: 0, currency: 0 }, recoveryMilliseconds: 0, willRestart: true, consumables: { potionsUsed: {}, timedBuff: null } }, level: 1, experience: 30, committedCurrency: 0, inventoryCount: 3 },
+  { seed: 7, outcome: { result: 'defeated', areaName: 'Sunlit Meadow', roomReached: 1, committed: { experience: 0, currency: 0 }, lost: { experience: 10, currency: 2 }, recoveryMilliseconds: 3_000, willRestart: true, consumables: { potionsUsed: { health: 1 }, timedBuff: null } }, level: 1, experience: 0, committedCurrency: 0, inventoryCount: 0 },
 ];
 
 function resultFromState(scenario: SimulationScenario, state: GameState): SimulationResult {

@@ -1,4 +1,4 @@
-import { createGame } from './simulation';
+import { createGame, synchronizeReviewQueue } from './simulation';
 import { advanceOffline } from './offline';
 import type { GameState, OfflineAdvanceResult } from './types';
 
@@ -75,6 +75,11 @@ function migrate(value: unknown): SaveEnvelope {
     ...defaults,
     ...state,
     events: Array.isArray(state.events) ? state.events : defaults.events,
+    outcome: isRecord(state.outcome) ? { ...state.outcome, areaName: typeof state.outcome.areaName === 'string' ? state.outcome.areaName : state.areaName } : null,
+    outcomeHistory: Array.isArray(state.outcomeHistory)
+      ? state.outcomeHistory.map((outcome) => isRecord(outcome) ? { ...outcome, areaName: typeof outcome.areaName === 'string' ? outcome.areaName : state.areaName } : outcome)
+      : isRecord(state.outcome) ? [{ ...state.outcome, areaName: state.areaName }] : defaults.outcomeHistory,
+    reviewedItemIds: Array.isArray(state.reviewedItemIds) ? state.reviewedItemIds : defaults.reviewedItemIds,
     hero: { ...defaults.hero, ...(state.hero as object) },
     combat: { ...defaults.combat, ...(state.combat as object) },
     progression: {
@@ -83,7 +88,7 @@ function migrate(value: unknown): SaveEnvelope {
       preparation: { ...defaults.progression.preparation, ...((state.progression as { preparation?: object }).preparation ?? {}) },
     },
   } as GameState;
-  return { format: SAVE_FORMAT, version: SAVE_VERSION, state: transientSafeState(migratedState) };
+  return { format: SAVE_FORMAT, version: SAVE_VERSION, state: transientSafeState(synchronizeReviewQueue(migratedState)) };
 }
 
 export function serializeSave(state: GameState, savedAtMilliseconds = 0): string {

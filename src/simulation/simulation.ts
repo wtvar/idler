@@ -224,7 +224,15 @@ function reviewQueue(state: GameState, levelMessages = state.reviewQueue.filter(
   const skillPending = state.progression.skillPoints > 0
     ? [`${state.progression.skillPoints} Skill point${state.progression.skillPoints === 1 ? '' : 's'} available to spend.`]
     : [];
-  return [...levelMessages, ...pending, ...skillPending];
+  const itemDecisions = state.inventory
+    .filter((item) => !state.reviewedItemIds.includes(item.id))
+    .map((item) => `Item and Loot decision: ${item.name} (${item.quality}) is waiting in Inventory.`);
+  return [...levelMessages, ...pending, ...skillPending, ...itemDecisions];
+}
+
+/** Rebuild queued progression and Item decisions when state enters through persistence. */
+export function synchronizeReviewQueue(state: GameState): GameState {
+  return { ...state, reviewQueue: reviewQueue(state) };
 }
 
 export function calculateMitigatedDamage(rawDamage: number, mitigation: number): number {
@@ -306,6 +314,8 @@ export function createGame(seed = 1, options: { startingHealth?: number; enemyAt
     recoveryRemainingMilliseconds: 0,
     autoRepeat: true,
     outcome: null,
+    outcomeHistory: [],
+    reviewedItemIds: [],
     events: [event(`A new Hero is ready in ${area.name}.`, 0, 0)],
     progression,
     skills: SKILLS,
@@ -351,13 +361,15 @@ function withCombat(state: GameState, combat: Partial<CombatState>): GameState {
 }
 
 function refreshProgressionPresentation(state: GameState, levelMessages?: string[]): GameState {
+  const reviewedItemIds = state.reviewedItemIds.filter((id) => state.inventory.some((item) => item.id === id));
+  const reviewState = { ...state, reviewedItemIds };
   const heroStats = applyTimedBuffToHero(derivedHero(state.progression, state.equipment), state.combat.timedBuff);
   const itemStats = equipmentStats(state.equipment);
   const aura = state.progression.preparation.auraId ? skillById(state, state.progression.preparation.auraId) : undefined;
   const auraMultiplier = aura?.id === 'general-focus' || aura?.id === 'magic-aura' ? 1.1 : 1;
   const maxHealthDelta = heroStats.maxHealth - state.hero.maxHealth;
   return {
-    ...state,
+    ...reviewState,
     hero: {
       ...state.hero,
       ...heroStats,
@@ -371,7 +383,7 @@ function refreshProgressionPresentation(state: GameState, levelMessages?: string
       heroDefense: (10 + state.progression.attributes.vitality * 0.5 + itemStats.defense) * (state.combat.timedBuff?.kind === 'defense' ? TIMED_BUFF_MULTIPLIERS.defense : 1),
       targetPolicy: state.progression.preparation.targetPolicy,
     },
-    reviewQueue: reviewQueue(state, levelMessages),
+    reviewQueue: reviewQueue(reviewState, levelMessages),
   };
 }
 
@@ -403,6 +415,7 @@ function currentRoomLoss(state: GameState): { experience: number; currency: numb
 function outcome(state: GameState, result: ExpeditionOutcome['result'], recoveryMilliseconds: number, willRestart: boolean): ExpeditionOutcome {
   return {
     result,
+    areaName: state.areaName,
     roomReached: Math.min(state.roomIndex + 1, state.roomCount),
     committed: state.committed,
     lost: result === 'completed' ? { experience: 0, currency: 0 } : currentRoomLoss(state),
@@ -412,16 +425,30 @@ function outcome(state: GameState, result: ExpeditionOutcome['result'], recovery
   };
 }
 
+function recordOutcome(state: GameState, expeditionOutcome: ExpeditionOutcome): GameState {
+  return {
+    ...state,
+    outcome: expeditionOutcome,
+    outcomeHistory: [...state.outcomeHistory, expeditionOutcome].slice(-20),
+  };
+}
+
+function updateLatestOutcome(state: GameState, updatedOutcome: ExpeditionOutcome | null): Pick<GameState, 'outcome' | 'outcomeHistory'> {
+  const outcomeHistory = state.outcomeHistory.slice();
+  const latestIndex = outcomeHistory.length - 1;
+  if (updatedOutcome && latestIndex >= 0) outcomeHistory[latestIndex] = updatedOutcome;
+  return { outcome: updatedOutcome, outcomeHistory };
+}
+
 function beginRecovery(state: GameState): GameState {
   const expeditionOutcome = outcome(state, 'defeated', RECOVERY_MILLISECONDS, state.autoRepeat);
-  const next = {
+  const next = recordOutcome({
     ...state,
     status: 'recovery' as const,
     recoveryRemainingMilliseconds: RECOVERY_MILLISECONDS,
-    outcome: expeditionOutcome,
     hero: { ...state.hero, health: 0 },
     combat: { ...state.combat, pendingMilliseconds: 0, timedBuff: null },
-  };
+  }, expeditionOutcome);
   return addEvent(refreshProgressionPresentation(next), 'Ari was defeated. The incomplete Room and its rewards were lost; Recovery begins.');
 }
 
@@ -573,8 +600,8 @@ function advance(state: GameState, milliseconds: number): GameState {
     }
     if (next.roomType === 'complete') {
       next = { ...next, areaProgress: { ...next.areaProgress, [next.selectedAreaId]: { completions: (next.areaProgress[next.selectedAreaId]?.completions ?? 0) + 1 } } };
-      const completedOutcome = outcome(next, 'completed', 0, false);
-      next = { ...next, outcome: completedOutcome };
+      const completedOutcome = outcome(next, 'completed', 0, next.autoRepeat);
+      next = recordOutcome(next, completedOutcome);
       next = addEvent(next, 'Expedition completed. All Rooms are secured.');
       if (next.autoRepeat) next = restartExpedition(next, 'The selected Area automatically restarts from Room 1.');
       else next = endExpeditionInPreparation(next, completedOutcome);
@@ -688,7 +715,7 @@ export function dispatch(state: GameState, command: Command): GameState {
     const started: GameState = {
       ...state,
       status: 'active',
-      autoRepeat: true,
+      autoRepeat: state.autoRepeat,
       outcome: null,
       committed: { experience: 0, currency: 0 },
       roomIndex: 0,
@@ -701,11 +728,26 @@ export function dispatch(state: GameState, command: Command): GameState {
   if (command.type === 'ADVANCE_TIME') return advance(state, command.milliseconds);
   if (command.type === 'WITHDRAW' && state.status === 'active') {
     const withdrawnOutcome = outcome(state, 'withdrawn', 0, false);
-    const next = endExpeditionInPreparation({ ...state, autoRepeat: false }, withdrawnOutcome);
+    const next = endExpeditionInPreparation(recordOutcome(state, withdrawnOutcome), withdrawnOutcome);
     return addEvent(next, 'Expedition withdrawn. Committed progress is retained; incomplete Room rewards were lost. Preparation is available.');
   }
   if (command.type === 'STOP_AUTO_REPEAT' && (state.status === 'active' || state.status === 'recovery')) {
-    return addEvent({ ...state, autoRepeat: false, outcome: state.outcome ? { ...state.outcome, willRestart: false } : state.outcome }, 'Automatic repeat stopped.');
+    const updatedOutcome = state.status === 'recovery' && state.outcome ? { ...state.outcome, willRestart: false } : state.outcome;
+    return addEvent({ ...state, autoRepeat: false, ...(state.status === 'recovery' ? updateLatestOutcome(state, updatedOutcome) : {}) }, 'Automatic repeat stopped.');
+  }
+  if (command.type === 'SET_AUTO_REPEAT') {
+    const updatedOutcome = state.status === 'recovery' && state.outcome?.result === 'defeated'
+      ? { ...state.outcome, willRestart: command.enabled }
+      : state.outcome;
+    return addEvent({
+      ...state,
+      autoRepeat: command.enabled,
+      ...(state.status === 'recovery' ? updateLatestOutcome(state, updatedOutcome) : {}),
+    }, `Automatic repeat ${command.enabled ? 'enabled' : 'disabled'}.`);
+  }
+  if (command.type === 'MARK_ITEM_REVIEWED' && state.status === 'preparation' && state.inventory.some((item) => item.id === command.itemId)) {
+    if (state.reviewedItemIds.includes(command.itemId)) return state;
+    return refreshProgressionPresentation({ ...state, reviewedItemIds: [...state.reviewedItemIds, command.itemId] });
   }
   if (command.type === 'SPEND_ATTRIBUTE' && state.status === 'preparation' && state.progression.attributePoints > 0) {
     const attributes = { ...state.progression.attributes, [command.attribute]: state.progression.attributes[command.attribute] + 1 };
@@ -780,6 +822,6 @@ export function dispatch(state: GameState, command: Command): GameState {
     return withPreparation(state, { ...state.progression.preparation, timedBuff: command.buff });
   }
   if (command.type === 'EQUIP_ITEM' && state.status === 'preparation') return equipItem(state, command.itemId, command.equipmentSlot);
-  if (command.type === 'SALVAGE_ITEM' && state.status === 'preparation') return salvageItem(state, command.itemId);
+  if (command.type === 'SALVAGE_ITEM' && state.status === 'preparation') return refreshProgressionPresentation(salvageItem(state, command.itemId));
   return state;
 }

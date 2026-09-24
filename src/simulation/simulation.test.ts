@@ -392,7 +392,7 @@ describe('deterministic simulation boundary', () => {
     expect(game.status).toBe('active');
     expect(game.roomIndex).toBe(0);
     expect(game.committed).toEqual({ experience: 0, currency: 0 });
-    expect(game.outcome).toMatchObject({ result: 'completed', committed: { experience: 30, currency: 6 } });
+    expect(game.outcomeHistory.at(-1)).toMatchObject({ result: 'completed', committed: { experience: 30, currency: 6 }, willRestart: true });
     expect(game.events.some(({ message }) => message.includes('Expedition completed'))).toBe(true);
   });
 
@@ -402,8 +402,18 @@ describe('deterministic simulation boundary', () => {
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 9_900 });
     expect(game.status).toBe('preparation');
     expect(game.outcome?.result).toBe('completed');
+    expect(game.outcome?.willRestart).toBe(false);
     game = dispatch(game, { type: 'START_EXPEDITION' });
     expect(game.status).toBe('active');
+  });
+
+  it('keeps the Settings repeat preference when starting an Expedition', () => {
+    let game = dispatch(createGame(), { type: 'SET_AUTO_REPEAT', enabled: false });
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    expect(game.autoRepeat).toBe(false);
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 9_900 });
+    expect(game.status).toBe('preparation');
+    expect(game.outcome?.willRestart).toBe(false);
   });
 
   it('regenerates resources during Combat and applies the Empty Room effect', () => {
@@ -439,6 +449,7 @@ describe('deterministic simulation boundary', () => {
     expect(game.status).toBe('preparation');
     expect(game.committed).toEqual({ experience: 10, currency: 2 });
     expect(game.outcome).toMatchObject({ result: 'withdrawn', roomReached: 2, lost: { experience: 5, currency: 1 } });
+    expect(game.autoRepeat).toBe(true);
     expect(game.events.at(-1)?.message).toContain('incomplete Room rewards were lost');
     game = dispatch(game, { type: 'START_EXPEDITION' });
     expect(game.status).toBe('active');
