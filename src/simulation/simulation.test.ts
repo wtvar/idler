@@ -4,6 +4,14 @@ import { acceptLoot, availableInventorySpace, compareItem, createGame, dispatch,
 import type { GameState } from './types';
 
 describe('deterministic simulation boundary', () => {
+  it('shows the complete authored Region route to a new Hero', () => {
+    const route = getAreaMap(createGame());
+    expect(route).toHaveLength(25);
+    expect(route[0]).toMatchObject({ id: 'sunlit-meadow', status: 'unlocked' });
+    expect(route.find(({ id }) => id === 'region-area-3')).toMatchObject({ status: 'locked' });
+    expect(route.filter(({ kind }) => kind === 'boss')).toHaveLength(4);
+    expect(route.at(-1)).toMatchObject({ id: REGION_BOSS_ID, status: 'locked' });
+  });
   it('authors the complete Region route and chapter Boss placement', () => {
     expect(AREAS.filter(({ kind }) => kind === 'ordinary')).toHaveLength(20);
     expect(AREAS.filter(({ kind }) => kind === 'boss')).toHaveLength(4);
@@ -13,31 +21,55 @@ describe('deterministic simulation boundary', () => {
     expect(AREAS.filter(({ kind }) => kind === 'ordinary').flatMap(({ rooms }) => rooms).some((room) => room.type === 'combat' && (room.championChance ?? 0) > 0)).toBe(true);
   });
 
-  it('requires currency for a Region Boss attempt and consumes it on selection', () => {
+  it('charges currency once when a Region Boss attempt starts', () => {
     let game = createGame();
     game = { ...game, areaProgress: { ...game.areaProgress, 'region-area-20': { completions: 1 } } };
-    expect(dispatch(game, { type: 'SELECT_AREA', areaId: REGION_BOSS_ID }).selectedAreaId).toBe(game.selectedAreaId);
+    game = dispatch(game, { type: 'SELECT_AREA', areaId: REGION_BOSS_ID });
+    expect(game.selectedAreaId).toBe(REGION_BOSS_ID);
+    expect(game.currency).toBe(0);
+    expect(dispatch(game, { type: 'START_EXPEDITION' }).status).toBe('preparation');
+    game = dispatch(game, { type: 'SELECT_AREA', areaId: 'sunlit-meadow' });
     game = { ...game, currency: REGION_BOSS_ATTEMPT_COST };
-    const selected = dispatch(game, { type: 'SELECT_AREA', areaId: REGION_BOSS_ID });
-    expect(selected.selectedAreaId).toBe(REGION_BOSS_ID);
-    expect(selected.currency).toBe(0);
+    game = dispatch(game, { type: 'SELECT_AREA', areaId: REGION_BOSS_ID });
+    expect(game.currency).toBe(REGION_BOSS_ATTEMPT_COST);
+    const started = dispatch(game, { type: 'START_EXPEDITION' });
+    expect(started.status).toBe('active');
+    expect(started.currency).toBe(0);
+    expect(dispatch(started, { type: 'START_EXPEDITION' }).currency).toBe(0);
   });
 
-  it('keeps the next ordinary Area selectable after the opening chapter Boss is completed', () => {
+  it('stops automatic Region Boss retries when another attempt cannot be paid for', () => {
+    let game = createGame(7, { startingHealth: 1, enemyAttack: 100 });
+    game = { ...game, areaProgress: { ...game.areaProgress, 'region-area-20': { completions: 1 } }, currency: REGION_BOSS_ATTEMPT_COST };
+    game = dispatch(game, { type: 'SELECT_AREA', areaId: REGION_BOSS_ID });
+    game = dispatch(game, { type: 'START_EXPEDITION' });
+    game = { ...game, hero: { ...game.hero, health: 1 } };
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 2_000 });
+    expect(game.status).toBe('recovery');
+    expect(game.autoRepeat).toBe(false);
+    expect(game.outcome?.willRestart).toBe(false);
+    game = dispatch(game, { type: 'SET_AUTO_REPEAT', enabled: true });
+    expect(game.autoRepeat).toBe(false);
+    expect(game.outcome?.willRestart).toBe(false);
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 3_000 });
+    expect(game.status).toBe('preparation');
+    expect(game.currency).toBe(0);
+  });
+
+  it('keeps the next ordinary Area selectable after a chapter Boss is completed', () => {
     const game = {
       ...createGame(),
       areaProgress: {
         ...createGame().areaProgress,
-        'sunlit-meadow': { completions: 1 },
-        'moonlit-grove': { completions: 2 },
+        'region-area-5': { completions: 2 },
       },
     };
-    let selected = dispatch(game, { type: 'SELECT_AREA', areaId: 'grove-chapter-boss' });
-    expect(selected.selectedAreaId).toBe('grove-chapter-boss');
+    let selected = dispatch(game, { type: 'SELECT_AREA', areaId: 'region-chapter-boss-5' });
+    expect(selected.selectedAreaId).toBe('region-chapter-boss-5');
     selected = dispatch(selected, { type: 'START_EXPEDITION' });
     selected = dispatch(selected, { type: 'STOP_AUTO_REPEAT' });
     selected = dispatch(selected, { type: 'ADVANCE_TIME', milliseconds: 20_000 });
-    expect(getAreaMap(selected).some(({ id, status }) => id === 'region-area-3' && status === 'unlocked')).toBe(true);
+    expect(getAreaMap(selected).some(({ id, status }) => id === 'region-area-6' && status === 'unlocked')).toBe(true);
   });
 
   it('unlocks Areas sequentially and requires replaying an ordinary Area before its Boss Area', () => {
@@ -45,10 +77,10 @@ describe('deterministic simulation boundary', () => {
     game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 10_000 });
     expect(game.status).toBe('preparation');
-    expect(getAreaMap(game).map(({ id, status }) => ({ id, status }))).toEqual([
+    expect(getAreaMap(game).slice(0, 3).map(({ id, status }) => ({ id, status }))).toEqual([
       { id: 'sunlit-meadow', status: 'completed' },
       { id: 'moonlit-grove', status: 'unlocked' },
-      { id: 'grove-chapter-boss', status: 'locked' },
+      { id: 'region-area-3', status: 'locked' },
     ]);
 
     game = dispatch(game, { type: 'SELECT_AREA', areaId: 'moonlit-grove' });
@@ -56,21 +88,25 @@ describe('deterministic simulation boundary', () => {
     game = dispatch(game, { type: 'START_EXPEDITION' });
     game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 20_000 });
-    expect(getAreaMap(game).find(({ id }) => id === 'grove-chapter-boss')?.status).toBe('locked');
+    expect(getAreaMap(game).find(({ id }) => id === 'region-area-3')?.status).toBe('unlocked');
 
     game = dispatch(game, { type: 'START_EXPEDITION' });
     game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 20_000 });
-    expect(getAreaMap(game).map(({ id, status }) => ({ id, status }))).toEqual([
+    expect(getAreaMap(game).slice(0, 3).map(({ id, status }) => ({ id, status }))).toEqual([
       { id: 'sunlit-meadow', status: 'completed' },
       { id: 'moonlit-grove', status: 'replayable' },
-      { id: 'grove-chapter-boss', status: 'boss' },
+      { id: 'region-area-3', status: 'unlocked' },
     ]);
+    const beforeBoss = { ...game, areaProgress: { ...game.areaProgress, 'region-area-5': { completions: 1 } } };
+    expect(getAreaMap(beforeBoss).find(({ id }) => id === 'region-chapter-boss-5')?.status).toBe('locked');
+    const afterReplay = { ...beforeBoss, areaProgress: { ...beforeBoss.areaProgress, 'region-area-5': { completions: 2 } } };
+    expect(getAreaMap(afterReplay).find(({ id }) => id === 'region-chapter-boss-5')?.status).toBe('boss');
   });
 
   it('rejects selecting a locked Area and selects an unlocked Area only during Preparation', () => {
     let game = createGame();
-    expect(dispatch(game, { type: 'SELECT_AREA', areaId: 'grove-chapter-boss' })).toEqual(game);
+    expect(dispatch(game, { type: 'SELECT_AREA', areaId: 'region-chapter-boss-5' })).toEqual(game);
     game = dispatch(game, { type: 'START_EXPEDITION' });
     expect(dispatch(game, { type: 'SELECT_AREA', areaId: 'moonlit-grove' })).toEqual(game);
   });
@@ -376,12 +412,15 @@ describe('deterministic simulation boundary', () => {
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 1_000 });
     expect(game.roomIndex).toBe(0);
     expect(game.committed).toEqual({ experience: 0, currency: 0 });
+    expect(game.currency).toBe(0);
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 3_200 });
     expect(game.roomIndex).toBe(1);
     expect(game.committed).toEqual({ experience: 10, currency: 2 });
+    expect(game.currency).toBe(2);
     game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });
     expect(game.roomIndex).toBe(2);
     expect(game.committed).toEqual({ experience: 15, currency: 3 });
+    expect(game.currency).toBe(3);
   });
 
   it('completes the authored fixture and commits the final Room', () => {
@@ -448,6 +487,7 @@ describe('deterministic simulation boundary', () => {
 
     expect(game.status).toBe('preparation');
     expect(game.committed).toEqual({ experience: 10, currency: 2 });
+    expect(game.currency).toBe(2);
     expect(game.outcome).toMatchObject({ result: 'withdrawn', roomReached: 2, lost: { experience: 5, currency: 1 } });
     expect(game.autoRepeat).toBe(true);
     expect(game.events.at(-1)?.message).toContain('incomplete Room rewards were lost');

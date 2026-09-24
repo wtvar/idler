@@ -45,7 +45,7 @@ describe('playable browser shell', () => {
     render(<App />);
     expect(screen.getByRole('region', { name: 'Area Map' })).toHaveTextContent('Sunlit Meadow · unlocked');
     expect(screen.getByRole('button', { name: /Moonlit Grove/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Grove Chapter Boss/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Cinderstep Pass Chapter Boss/ })).toBeDisabled();
   });
 
   it('exposes Preparation choices and locks them after the Expedition starts', async () => {

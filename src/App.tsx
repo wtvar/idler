@@ -42,7 +42,7 @@ export function App() {
   });
 
   useEffect(() => {
-    if (game.status !== 'active') return;
+    if (game.status !== 'active' && game.status !== 'recovery') return;
     const timer = window.setInterval(() => send({ type: 'ADVANCE_TIME', milliseconds: 100 }), 100);
     return () => window.clearInterval(timer);
   }, [game.status]);
@@ -70,7 +70,8 @@ export function App() {
     }
   };
 
-  const canStart = game.status === 'preparation' && game.progression.preparation.activeSkillIds.length === 4;
+  const selectedAttemptCost = getAreaMap(game).find(({ id }) => id === game.selectedAreaId)?.attemptCost ?? 0;
+  const canStart = game.status === 'preparation' && game.progression.preparation.activeSkillIds.length === 4 && game.currency >= selectedAttemptCost;
   const progress = game.roomType === 'complete' ? game.roomCount : game.roomIndex;
   const expeditionRisk = game.status === 'recovery' ? 'Recovery' : game.status === 'active' && game.hero.health / game.hero.maxHealth < .35 ? 'High' : game.status === 'active' ? 'Watching' : 'Ready';
   const heroCombatState = game.status === 'active' && game.roomType === 'combat' ? 'In Combat' : game.status === 'recovery' ? 'Recovering' : 'Preparing';
@@ -150,6 +151,7 @@ export function App() {
     <section className="panel preparation" id="preparation" aria-label="Preparation">
       <span className="label">PREPARATION</span>
       <h2>Build choices for the next Expedition</h2>
+      {selectedAttemptCost > 0 && <p>This Area costs {selectedAttemptCost} currency when the Expedition starts. You have {game.currency} currency.</p>}
       <p className="muted">{game.status === 'active' ? 'Preparation is locked for the active Expedition. Changes made between Expeditions apply to the next Expedition.' : game.status === 'recovery' ? 'Recovery is in progress. Preparation changes apply after Recovery.' : `${game.progression.preparation.activeSkillIds.length}/4 Active Skills selected · ${game.progression.preparation.auraId ? '1' : '0'}/1 Aura · ${game.progression.preparation.ultimateId ? '1' : '0'}/1 Ultimate`}</p>
       <p><a href="#skills" onClick={() => setPage('skills')}>Open the full Skill tree</a> to level Skills, inspect prerequisites, and choose Auras or Ultimates.</p>
       <label className="target-policy">Target policy <select aria-label="Target policy" value={game.progression.preparation.targetPolicy} onChange={(event) => send({ type: 'SET_TARGET_POLICY', policy: event.target.value as TargetPolicy })} disabled={game.status !== 'preparation'}>{policies.map((policy) => <option key={policy} value={policy}>{policy}</option>)}</select></label>
@@ -165,7 +167,7 @@ export function App() {
     <section className="panel" id="area-map" aria-label="Area Map">
       <span className="label">AREA MAP</span>
       <h2>Choose an Area</h2>
-      <div className="area-map">{getAreaMap(game).map((area) => <button className="secondary" key={area.id} onClick={() => send({ type: 'SELECT_AREA', areaId: area.id })} disabled={area.status === 'locked' || game.status !== 'preparation'}>{area.name} · {area.status}{area.completions > 0 ? ` · ${area.completions} completion${area.completions === 1 ? '' : 's'}` : ''}</button>)}</div>
+      <div className="area-map">{getAreaMap(game).map((area) => <button className="secondary" key={area.id} onClick={() => send({ type: 'SELECT_AREA', areaId: area.id })} disabled={area.status === 'locked' || game.status !== 'preparation'}>{area.name} · {area.status}{area.completions > 0 ? ` · ${area.completions} completion${area.completions === 1 ? '' : 's'}` : ''}{area.attemptCost ? ` · ${area.attemptCost} currency per attempt` : ''}</button>)}</div>
       <p className="muted">Areas unlock in order. Replay an Area to earn its chapter Boss.</p>
     </section>
     <section className="panel equipment" id="inventory" aria-label="Equipment and Loot">

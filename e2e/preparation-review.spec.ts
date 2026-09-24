@@ -46,3 +46,15 @@ test('explains an offline Defeat, lost rewards, Recovery, and automatic restart'
   await expect(summary).toContainText('Recovery: 3s');
   await expect(summary).toContainText('the Area will restart automatically');
 });
+
+test('Recovery finishes and restarts the selected Area while the browser stays open', async ({ page }) => {
+  let game = dispatch(createGame(7, { startingHealth: 1, enemyAttack: 100 }), { type: 'START_EXPEDITION' });
+  game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 2_000 });
+  if (game.status !== 'recovery') throw new Error('Expected the fixture Expedition to end in Recovery');
+  await page.addInitScript((save) => window.localStorage.setItem('idler.save', save), serializeSave(game));
+  await page.goto('/');
+
+  await expect(page.getByRole('status', { name: 'Expedition status' })).toHaveText('recovery');
+  await expect(page.getByRole('status', { name: 'Expedition status' })).toHaveText('active', { timeout: 6_000 });
+  await expect(page.getByRole('region', { name: 'Room progress' })).toContainText('Room 1 of 3');
+});

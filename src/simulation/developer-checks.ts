@@ -29,15 +29,19 @@ export function assertAreaRouteAvailable(): void {
     const unlocked: GameState = {
       ...start,
       areaProgress: { ...start.areaProgress, [area.unlock.areaId]: { completions: area.unlock.completions } },
-      currency: area.attemptCost ?? 0,
+      currency: 0,
     };
     if (area.id === REGION_BOSS_ID) {
-      const short = dispatch({ ...unlocked, currency: (area.attemptCost ?? 0) - 1 }, { type: 'SELECT_AREA', areaId: area.id });
-      if (short.selectedAreaId === area.id) throw new Error('Region Boss skipped its currency gate');
+      const selected = dispatch(unlocked, { type: 'SELECT_AREA', areaId: area.id });
+      if (selected.selectedAreaId !== area.id || dispatch(selected, { type: 'START_EXPEDITION' }).status !== 'preparation') {
+        throw new Error('Region Boss skipped its currency gate');
+      }
     }
-    const selected = dispatch(unlocked, { type: 'SELECT_AREA', areaId: area.id });
-    if (selected.selectedAreaId !== area.id || selected.currency !== unlocked.currency - (area.attemptCost ?? 0)) {
-      throw new Error(`Area ${area.id} cannot be selected after meeting its unlock requirements`);
+    const funded = { ...unlocked, currency: area.attemptCost ?? 0 };
+    const selected = dispatch(funded, { type: 'SELECT_AREA', areaId: area.id });
+    const started = dispatch(selected, { type: 'START_EXPEDITION' });
+    if (selected.selectedAreaId !== area.id || selected.currency !== funded.currency || started.status !== 'active' || started.currency !== 0) {
+      throw new Error(`Area ${area.id} cannot be attempted after meeting its unlock requirements`);
     }
   }
 }

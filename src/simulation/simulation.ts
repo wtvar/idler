@@ -1,4 +1,4 @@
-import { AFFIXES, AREAS, EXCEPTIONAL_ITEMS, ITEM_BASES, ITEM_QUALITY_MULTIPLIERS, REGION_BOSS_ATTEMPT_COST, REGION_BOSS_ID, SKILLS } from './content';
+import { AFFIXES, AREAS, EXCEPTIONAL_ITEMS, ITEM_BASES, ITEM_QUALITY_MULTIPLIERS, SKILLS } from './content';
 import { assertAuthoredContentValid } from './content-validation';
 import type { AreaMapEntry, AreaMapStatus, Command, CombatState, Consumables, Equipment, EquipmentPosition, EquipmentStats, Event, ExpeditionOutcome, GameState, Item, ItemQuality, PotionKind, PotionSize, ProgressionState, SkillDefinition, StatusEffect, TargetPolicy, TimedBuffKind } from './types';
 
@@ -257,6 +257,10 @@ function selectedArea(state: GameState) {
   return areaById(state.selectedAreaId) ?? AREAS[0];
 }
 
+function canAffordExpedition(state: GameState): boolean {
+  return state.currency >= (selectedArea(state).attemptCost ?? 0);
+}
+
 function areaIsUnlocked(state: GameState, areaId: string): boolean {
   const area = areaById(areaId);
   if (!area) return false;
@@ -265,22 +269,6 @@ function areaIsUnlocked(state: GameState, areaId: string): boolean {
 }
 
 export function getAreaMap(state: GameState): AreaMapEntry[] {
-  // Keep the original three-area fixture readable for existing saves and UI smoke tests
-  // until the player advances beyond the opening chapter. The complete authored map is
-  // available as soon as Area 3 is reached.
-  if ((state.selectedAreaId === 'sunlit-meadow' || state.selectedAreaId === 'moonlit-grove' || state.selectedAreaId === 'grove-chapter-boss')
-    && (state.areaProgress['region-area-3']?.completions ?? 0) === 0
-    && (state.areaProgress['grove-chapter-boss']?.completions ?? 0) === 0) {
-    const first = AREAS.find((area) => area.id === 'sunlit-meadow')!;
-    const second = AREAS.find((area) => area.id === 'moonlit-grove')!;
-    const firstCompletions = state.areaProgress[first.id]?.completions ?? 0;
-    const secondCompletions = state.areaProgress[second.id]?.completions ?? 0;
-    return [
-      { ...first, status: firstCompletions === 0 ? 'unlocked' : 'completed', completions: firstCompletions },
-      { ...second, status: firstCompletions === 0 ? 'locked' : secondCompletions === 0 ? 'unlocked' : 'replayable', completions: secondCompletions },
-      { ...second, id: 'grove-chapter-boss', name: 'Grove Chapter Boss', kind: 'boss', unlock: { type: 'complete-area', areaId: second.id, completions: 2 }, boss: { name: 'Grove Warden' }, encounterTable: ['Grove Warden'], rooms: [{ type: 'combat', enemy: { name: 'Grove Warden', health: 60, attack: 7, defense: 18 }, experience: 45, currency: 12 }], status: secondCompletions >= 2 ? 'boss' : 'locked', completions: 0 },
-    ];
-  }
   return AREAS.map((area) => {
     const completions = state.areaProgress[area.id]?.completions ?? 0;
     let status: AreaMapStatus = 'locked';
@@ -443,9 +431,11 @@ function updateLatestOutcome(state: GameState, updatedOutcome: ExpeditionOutcome
 }
 
 function beginRecovery(state: GameState): GameState {
-  const expeditionOutcome = outcome(state, 'defeated', RECOVERY_MILLISECONDS, state.autoRepeat);
+  const willRestart = state.autoRepeat && canAffordExpedition(state);
+  const expeditionOutcome = outcome(state, 'defeated', RECOVERY_MILLISECONDS, willRestart);
   const next = recordOutcome({
     ...state,
+    autoRepeat: willRestart,
     status: 'recovery' as const,
     recoveryRemainingMilliseconds: RECOVERY_MILLISECONDS,
     hero: { ...state.hero, health: 0 },
@@ -457,18 +447,21 @@ function beginRecovery(state: GameState): GameState {
 function commitRoom(state: GameState): GameState {
   const room = selectedArea(state).rooms[state.roomIndex];
   const multiplier = state.enemy?.champion ? 1.5 : 1;
+  const earnedExperience = Math.round(room.experience * multiplier);
+  const earnedCurrency = Math.round(room.currency * multiplier);
   const newItem = generateItem(state.seed, state.nextItemId, state.roomIndex);
   const lootDecision = acceptLoot(state.inventory, newItem);
   const potionKind: PotionKind = state.roomIndex % 2 === 0 ? 'health' : 'mana';
   const potionSize: PotionSize[] = ['Small', 'Medium', 'Large', 'Greater'];
   let next = {
     ...state,
-    committed: { experience: state.committed.experience + Math.round(room.experience * multiplier), currency: state.committed.currency + Math.round(room.currency * multiplier) },
+    committed: { experience: state.committed.experience + earnedExperience, currency: state.committed.currency + earnedCurrency },
+    currency: state.currency + earnedCurrency,
     inventory: lootDecision.inventory,
     nextItemId: state.nextItemId + 1,
     consumables: addPotion(state.consumables, potionKind, potionSize[state.roomIndex % potionSize.length]),
   };
-  const progression = { ...next.progression, experience: next.progression.experience + Math.round(room.experience * multiplier) };
+  const progression = { ...next.progression, experience: next.progression.experience + earnedExperience };
   const levelMessages = next.reviewQueue.filter((message) => message.startsWith('Level '));
   while (progression.level < MAX_LEVEL && progression.experience >= progression.level * XP_PER_LEVEL) {
     progression.level += 1;
@@ -602,10 +595,12 @@ function advance(state: GameState, milliseconds: number): GameState {
     }
     if (next.roomType === 'complete') {
       next = { ...next, areaProgress: { ...next.areaProgress, [next.selectedAreaId]: { completions: (next.areaProgress[next.selectedAreaId]?.completions ?? 0) + 1 } } };
-      const completedOutcome = outcome(next, 'completed', 0, next.autoRepeat);
+      const willRestart = next.autoRepeat && canAffordExpedition(next);
+      const completedOutcome = outcome(next, 'completed', 0, willRestart);
+      next = { ...next, autoRepeat: willRestart };
       next = recordOutcome(next, completedOutcome);
       next = addEvent(next, 'Expedition completed. All Rooms are secured.');
-      if (next.autoRepeat) next = restartExpedition(next, 'The selected Area automatically restarts from Room 1.');
+      if (willRestart) next = restartExpedition(next, 'The selected Area automatically restarts from Room 1.');
       else next = endExpeditionInPreparation(next, completedOutcome);
       break;
     }
@@ -621,6 +616,7 @@ function restartExpedition(state: GameState, message: string): GameState {
   const fresh = enterRoom({
     ...state,
     status: 'active',
+    currency: state.currency - (selectedArea(state).attemptCost ?? 0),
     committed: { experience: 0, currency: 0 },
     recoveryRemainingMilliseconds: 0,
     hero: { ...state.hero, health: state.hero.maxHealth },
@@ -642,9 +638,6 @@ function endExpeditionInPreparation(state: GameState, expeditionOutcome: Expedit
 function selectAreaForPreparation(state: GameState, areaId: string): GameState {
   const area = areaById(areaId);
   if (!area || !areaIsUnlocked(state, areaId)) return state;
-  if (area.id === REGION_BOSS_ID && state.currency < REGION_BOSS_ATTEMPT_COST) {
-    return addEvent(state, `The Region Boss requires ${REGION_BOSS_ATTEMPT_COST} currency for an attempt.`);
-  }
   const next = enterRoom({
     ...state,
     selectedAreaId: area.id,
@@ -654,7 +647,6 @@ function selectAreaForPreparation(state: GameState, areaId: string): GameState {
     status: 'preparation',
     outcome: null,
     committed: { experience: 0, currency: 0 },
-    currency: area.id === REGION_BOSS_ID ? state.currency - REGION_BOSS_ATTEMPT_COST : state.currency,
     hero: { ...state.hero, health: state.hero.maxHealth },
   }, 0);
   return addEvent(next, `${area.name} selected for the next Expedition.`);
@@ -705,18 +697,22 @@ function advanceRecovery(state: GameState, milliseconds: number): GameState {
   const remaining = Math.max(0, state.recoveryRemainingMilliseconds - milliseconds);
   if (remaining > 0) return { ...state, elapsedMilliseconds: state.elapsedMilliseconds + milliseconds, recoveryRemainingMilliseconds: remaining };
   const recovered = { ...state, elapsedMilliseconds: state.elapsedMilliseconds + milliseconds, recoveryRemainingMilliseconds: 0 };
-  if (state.autoRepeat) return restartExpedition(recovered, 'Recovery complete. The selected Area automatically restarts from Room 1.');
+  if (state.autoRepeat && canAffordExpedition(recovered)) return restartExpedition(recovered, 'Recovery complete. The selected Area automatically restarts from Room 1.');
   return addEvent(refreshProgressionPresentation({ ...recovered, status: 'preparation', hero: { ...recovered.hero, health: recovered.hero.maxHealth } }), 'Recovery complete. Automatic repeat is stopped; the Area is ready for Preparation.');
 }
 
 export function dispatch(state: GameState, command: Command): GameState {
   if (command.type === 'SELECT_AREA' && state.status === 'preparation') return selectAreaForPreparation(state, command.areaId);
+  if (command.type === 'START_EXPEDITION' && state.status === 'preparation' && !canAffordExpedition(state)) {
+    return addEvent(state, `${selectedArea(state).name} requires ${selectedArea(state).attemptCost} currency for an attempt.`);
+  }
   if (command.type === 'START_EXPEDITION' && state.status === 'preparation' && state.progression.preparation.activeSkillIds.length === 4) {
     const selectedBuff = state.progression.preparation.timedBuff;
     const canUseBuff = selectedBuff !== null && state.consumables.timedBuffs[selectedBuff] > 0;
     const started: GameState = {
       ...state,
       status: 'active',
+      currency: state.currency - (selectedArea(state).attemptCost ?? 0),
       autoRepeat: state.autoRepeat,
       outcome: null,
       committed: { experience: 0, currency: 0 },
@@ -738,6 +734,9 @@ export function dispatch(state: GameState, command: Command): GameState {
     return addEvent({ ...state, autoRepeat: false, ...(state.status === 'recovery' ? updateLatestOutcome(state, updatedOutcome) : {}) }, 'Automatic repeat stopped.');
   }
   if (command.type === 'SET_AUTO_REPEAT') {
+    if (state.status === 'recovery' && command.enabled && !canAffordExpedition(state)) {
+      return addEvent(state, `${selectedArea(state).name} requires ${selectedArea(state).attemptCost} currency for another attempt.`);
+    }
     const updatedOutcome = state.status === 'recovery' && state.outcome?.result === 'defeated'
       ? { ...state.outcome, willRestart: command.enabled }
       : state.outcome;
