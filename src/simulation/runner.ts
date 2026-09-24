@@ -56,14 +56,19 @@ export function runScenario(scenario: SimulationScenario): SimulationResult {
   if (!Number.isInteger(scenario.seed)) throw new Error('Simulation scenario seed must be an integer');
   if (!Number.isFinite(scenario.durationMilliseconds) || scenario.durationMilliseconds < 0) throw new Error('Simulation scenario duration must be non-negative');
 
+  let state = prepareScenario(scenario);
+  state = dispatch(state, { type: 'ADVANCE_TIME', milliseconds: scenario.durationMilliseconds });
+  assertSimulationInvariants(state);
+  return resultFromState(scenario, state);
+}
+
+export function prepareScenario(scenario: SimulationScenario): GameState {
   let state = createGame(scenario.seed, scenario.createGameOptions);
   for (const command of scenario.commands ?? []) state = dispatch(state, command);
   if (state.status === 'preparation' && !(scenario.commands ?? []).some((command) => command.type === 'START_EXPEDITION')) {
     state = dispatch(state, { type: 'START_EXPEDITION' });
   }
-  state = dispatch(state, { type: 'ADVANCE_TIME', milliseconds: scenario.durationMilliseconds });
-  assertSimulationInvariants(state);
-  return resultFromState(scenario, state);
+  return state;
 }
 
 function reportFor(scenario: SimulationScenario, results: SimulationResult[]): BalanceReport {
@@ -96,7 +101,7 @@ export function runScenarioBatch(scenario: SimulationScenario, count: number): S
 export function assertSimulationInvariants(state: GameState): void {
   if (state.status === 'active' && state.outcome !== null && state.outcome.result !== 'completed') throw new Error('Active Simulation cannot have a defeated or withdrawn outcome');
   if (['completed', 'withdrawn', 'defeated'].includes(state.status) && state.outcome === null) throw new Error('Terminal Simulation status requires a terminal outcome');
-  if (state.outcome && state.outcome.result !== state.status && !(state.status === 'recovery' && state.outcome.result === 'defeated') && !(state.status === 'active' && state.outcome.result === 'completed')) throw new Error('Terminal outcome does not match Simulation status');
+  if (state.outcome && state.outcome.result !== state.status && !(state.status === 'recovery' && state.outcome.result === 'defeated') && !(state.status === 'active' && state.outcome.result === 'completed') && !(state.status === 'preparation' && ['completed', 'withdrawn'].includes(state.outcome.result))) throw new Error('Terminal outcome does not match Simulation status');
   if (!Number.isFinite(state.hero.health) || !Number.isFinite(state.hero.maxHealth) || state.hero.maxHealth <= 0 || state.hero.health < 0 || state.hero.health > state.hero.maxHealth) throw new Error('Hero health is outside its valid bounds');
   if (!Number.isFinite(state.combat.heroMana) || !Number.isFinite(state.combat.maxMana) || state.combat.maxMana < 0 || state.combat.heroMana < 0 || state.combat.heroMana > state.combat.maxMana) throw new Error('Hero Mana is outside its valid bounds');
   if (!Number.isInteger(state.roomIndex) || !Number.isInteger(state.roomCount) || state.roomCount < 1 || state.roomIndex < 0 || state.roomIndex > state.roomCount) throw new Error('Room progression is outside its valid bounds');
@@ -116,8 +121,8 @@ export function assertGoldenScenarios(): void {
   });
 }
 
-export function assertScenarioDeterminism(): void {
-  for (const scenario of GOLDEN_SCENARIOS) {
+export function assertScenarioDeterminism(scenarios: SimulationScenario[] = GOLDEN_SCENARIOS): void {
+  for (const scenario of scenarios) {
     const first = runScenario(scenario);
     const replay = runScenario(scenario);
     if (JSON.stringify(first) !== JSON.stringify(replay)) throw new Error(`Simulation replay drift detected for ${scenario.name} with seed ${scenario.seed}`);

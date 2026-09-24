@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "validate:content": "vitest run src/simulation/content.validation.test.ts",
-    "check": "npm run build && npm test",
+    "balance:report": "tsx scripts/balance-report.ts",
+    "check": "npm run build && npm test && npm run balance:report",
     "test:e2e": "playwright test",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -28,6 +29,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "jsdom": "latest",
+    "tsx": "^4.23.15",
     "vitest": "latest"
   }
 }

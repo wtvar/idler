@@ -1,39 +1,21 @@
 # Run Idler
 
-First time, install dependencies:
+From this folder, install dependencies once:
 
 ```powershell
 npm install
 ```
 
-Start the app from this folder:
+Start the app:
 
 ```powershell
 npm run dev
 ```
 
-Open the local URL Vite prints, usually `http://localhost:5173`. Stop it with `Ctrl+C`.
+Open the local URL shown in the terminal, usually `http://localhost:5173`. Stop the app with `Ctrl+C`. Progress saves automatically in the browser.
 
-Progress saves automatically in the browser. Developer save tools in Settings can export a save as text or import one.
+Generate developer Balance reports with `npm run balance:report`. Read `balance-reports/balance.md` or use `balance-reports/balance.json`. Band deviations print as advisory warnings.
 
-When you return later, an active Expedition or Recovery advances automatically for up to eight hours. The Offline Summary shows what happened.
+Run all correctness checks with `npm run check`. Run only the tests with `npm test`, or check authored content with `npm run validate:content`.
 
-Run checks with `npm test`, or check types with `npm run typecheck`.
-
-Check authored Region, Skill, Item, and Affix data with `npm run validate:content`.
-
-Run the full developer check with `npm run check`.
-
-For first-time browser checks, install Chromium with `npx playwright install chromium`, then run `npm run test:e2e`.
-
-Complete a Room to receive identified Items. Inspect and equip them in the Equipment & Loot panel between Expeditions.
-
-Configure Health and Mana Potion thresholds and select one timed Combat buff in the Preparation panel. Potions are used automatically during Combat; the timed buff ends with its Expedition.
-
-Use the Area Map to select unlocked Areas. Complete an Area once to unlock the next ordinary Area, then replay the preceding Area to unlock its chapter Boss.
-
-Ordinary Areas can roll weighted Champions with increased rewards. The Region Boss unlocks after Area 20 and requires the displayed currency attempt cost before it can be selected.
-
-Use the Skills navigation to open the dedicated Skill tree view. Each Skill shows its description, Hero-level unlock, prerequisites, rank, and available level/select actions.
-
-Open Settings to turn automatic Expedition repeats on or off. Open History to review recent Expedition events and outcomes.
+For browser tests, first run `npx playwright install chromium`, then `npm run test:e2e`.
