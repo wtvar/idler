@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "validate:content": "vitest run src/simulation/content.validation.test.ts",
+    "check": "npm run build && npm test",
     "test:e2e": "playwright test",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

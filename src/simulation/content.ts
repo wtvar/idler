@@ -56,8 +56,8 @@ const chapterBosses: AreaDefinition[] = [5, 10, 15, 20].map((areaNumber) => ({
   encounterTable: [`Chapter Warden ${areaNumber}`],
   boss: { name: `Chapter Warden ${areaNumber}` },
   rooms: [
-    { type: 'combat' as const, enemy: { name: `Chapter Warden ${areaNumber}`, health: 90 + areaNumber * 8, attack: 8 + Math.floor(areaNumber / 5), defense: 22 + areaNumber }, experience: 70 + areaNumber * 5, currency: 20 + areaNumber, championChance: 0 },
     { type: 'empty' as const, durationMilliseconds: 300, healthEffect: 15, manaEffect: 8, experience: 10, currency: 4 },
+    { type: 'combat' as const, enemy: { name: `Chapter Warden ${areaNumber}`, health: 90 + areaNumber * 8, attack: 8 + Math.floor(areaNumber / 5), defense: 22 + areaNumber }, experience: 70 + areaNumber * 5, currency: 20 + areaNumber, championChance: 0 },
   ],
 }));
 

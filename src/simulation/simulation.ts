@@ -1,7 +1,9 @@
 import { AFFIXES, AREAS, EXCEPTIONAL_ITEMS, ITEM_BASES, ITEM_QUALITY_MULTIPLIERS, REGION_BOSS_ATTEMPT_COST, REGION_BOSS_ID, SKILLS } from './content';
+import { assertAuthoredContentValid } from './content-validation';
 import type { AreaMapEntry, AreaMapStatus, Command, CombatState, Consumables, Equipment, EquipmentPosition, EquipmentStats, Event, ExpeditionOutcome, GameState, Item, ItemQuality, PotionKind, PotionSize, ProgressionState, SkillDefinition, StatusEffect, TargetPolicy, TimedBuffKind } from './types';
 
 export const SIMULATION_VERSION = 'v1-expedition-loop';
+assertAuthoredContentValid();
 const TICK_MILLISECONDS = 100;
 const HERO_ATTACK_INTERVAL = 1_400;
 const ENEMY_ATTACK_INTERVAL = 1_500;

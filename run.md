@@ -20,6 +20,10 @@ When you return later, an active Expedition or Recovery advances automatically f
 
 Run checks with `npm test`, or check types with `npm run typecheck`.
 
+Check authored Region, Skill, Item, and Affix data with `npm run validate:content`.
+
+Run the full developer check with `npm run check`.
+
 For first-time browser checks, install Chromium with `npx playwright install chromium`, then run `npm run test:e2e`.
 
 Complete a Room to receive identified Items. Inspect and equip them in the Equipment & Loot panel between Expeditions.

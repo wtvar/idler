@@ -1,6 +1,6 @@
-import { AREAS, SKILLS } from './content';
+export { validateContent } from './content-validation';
 import { createGame, dispatch, SIMULATION_VERSION } from './simulation';
-import type { AreaDefinition, BalanceReport, Command, ContentValidationIssue, ContentValidationResult, GameState, SimulationBatch, SimulationResult, SimulationScenario, SkillDefinition } from './types';
+import type { BalanceReport, GameState, SimulationBatch, SimulationResult, SimulationScenario } from './types';
 
 const MAX_BATCH_SIZE = 1_000;
 
@@ -93,69 +93,16 @@ export function runScenarioBatch(scenario: SimulationScenario, count: number): S
   return { results, report: reportFor(scenario, results) };
 }
 
-function issue(code: string, message: string, path?: string): ContentValidationIssue { return { code, message, path }; }
-
-export function validateContent(areas: AreaDefinition[] = AREAS, skills: SkillDefinition[] = SKILLS): ContentValidationResult {
-  const issues: ContentValidationIssue[] = [];
-  const areaIds = new Set<string>();
-  const skillIds = new Set<string>();
-  for (const skill of skills) {
-    if (!skill.id.trim()) issues.push(issue('empty-id', 'Skill id must not be empty', 'skills'));
-    if (skillIds.has(skill.id)) issues.push(issue('duplicate-id', `Duplicate skill id: ${skill.id}`, `skills.${skill.id}`));
-    skillIds.add(skill.id);
-    if (skill.maxRank < 1 || skill.unlockLevel < 1 || skill.manaCost < 0 || skill.cooldownMilliseconds < 0) issues.push(issue('invalid-skill-values', `Skill ${skill.id} has an invalid rank, unlock, cost, or cooldown`, `skills.${skill.id}`));
-    for (const prerequisite of skill.prerequisites) if (!skillIds.has(prerequisite) && !skills.some((candidate) => candidate.id === prerequisite)) issues.push(issue('skill-reference', `Skill ${skill.id} references missing prerequisite ${prerequisite}`, `skills.${skill.id}`));
-  }
-  for (const area of areas) {
-    if (!area.id.trim()) issues.push(issue('empty-id', 'Area id must not be empty', 'areas'));
-    if (areaIds.has(area.id)) issues.push(issue('duplicate-id', `Duplicate area id: ${area.id}`, `areas.${area.id}`));
-    areaIds.add(area.id);
-    if (area.rooms.length === 0) issues.push(issue('empty-rooms', `Area ${area.id} must contain at least one Room`, `areas.${area.id}.rooms`));
-    if (area.rooms.length > 100) issues.push(issue('room-safety-bound', `Area ${area.id} exceeds the 100 Room safety bound`, `areas.${area.id}.rooms`));
-    if (area.encounterTable.length === 0) issues.push(issue('empty-encounter-table', `Area ${area.id} must contain an encounter table`, `areas.${area.id}.encounterTable`));
-    const encounterNames = new Set(area.encounterTable);
-    for (const room of area.rooms) {
-      if (room.type === 'combat' && !encounterNames.has(room.enemy.name)) issues.push(issue('encounter-reference', `Room enemy ${room.enemy.name} is missing from ${area.id}'s encounter table`, `areas.${area.id}.rooms`));
-      if (room.type === 'combat' && (room.enemy.health <= 0 || room.enemy.attack < 0 || room.experience < 0 || room.currency < 0 || (room.championChance ?? 0) < 0 || (room.championChance ?? 0) > 1)) issues.push(issue('invalid-room-values', `Area ${area.id} contains invalid Combat or reward values`, `areas.${area.id}.rooms`));
-      if (room.type === 'empty' && (room.durationMilliseconds < 0 || room.experience < 0 || room.currency < 0)) issues.push(issue('invalid-room-values', `Area ${area.id} contains invalid Empty Room values`, `areas.${area.id}.rooms`));
-    }
-    const unlock = area.unlock;
-    if (unlock.type === 'complete-area' && !areas.some((candidate) => candidate.id === unlock.areaId)) issues.push(issue('area-reference', `Area ${area.id} references missing unlock Area ${unlock.areaId}`, `areas.${area.id}.unlock`));
-    if (unlock.type === 'complete-area' && (!Number.isInteger(unlock.completions) || unlock.completions < 1)) issues.push(issue('invalid-unlock', `Area ${area.id} has an invalid completion requirement`, `areas.${area.id}.unlock`));
-    if (area.kind !== 'ordinary' && !area.boss) issues.push(issue('boss-definition', `Boss Area ${area.id} must define a Boss`, `areas.${area.id}`));
-    if (area.kind !== 'ordinary' && area.boss && !encounterNames.has(area.boss.name)) issues.push(issue('boss-reference', `Boss ${area.boss.name} is missing from ${area.id}'s encounter table`, `areas.${area.id}.boss`));
-    if (area.kind === 'region-boss' && (!Number.isInteger(area.attemptCost) || (area.attemptCost ?? 0) <= 0)) issues.push(issue('region-boss-cost', `Region Boss ${area.id} must have a positive currency attempt cost`, `areas.${area.id}.attemptCost`));
-  }
-  const areaById = new Map(areas.map((area) => [area.id, area]));
-  const areaReachable = (areaId: string, visiting = new Set<string>()): boolean => {
-    const area = areaById.get(areaId);
-    if (!area) return false;
-    if (area.unlock.type === 'start') return true;
-    if (visiting.has(areaId)) return false;
-    visiting.add(areaId);
-    return areaReachable(area.unlock.areaId, visiting);
-  };
-  for (const area of areas) if (!areaReachable(area.id)) issues.push(issue('unreachable-area', `Area ${area.id} cannot be reached from a start Area`, `areas.${area.id}`));
-  const skillById = new Map(skills.map((skill) => [skill.id, skill]));
-  const skillReachable = (skillId: string, visiting = new Set<string>()): boolean => {
-    const skill = skillById.get(skillId);
-    if (!skill) return false;
-    if (skill.prerequisites.length === 0) return true;
-    if (visiting.has(skillId)) return false;
-    visiting.add(skillId);
-    return skill.prerequisites.every((prerequisite) => skillReachable(prerequisite, new Set(visiting)));
-  };
-  for (const skill of skills) if (!skillReachable(skill.id)) issues.push(issue('unreachable-skill', `Skill ${skill.id} has an unreachable prerequisite chain`, `skills.${skill.id}`));
-  return { valid: issues.length === 0, issues };
-}
-
 export function assertSimulationInvariants(state: GameState): void {
   if (state.status === 'active' && state.outcome !== null && state.outcome.result !== 'completed') throw new Error('Active Simulation cannot have a defeated or withdrawn outcome');
   if (['completed', 'withdrawn', 'defeated'].includes(state.status) && state.outcome === null) throw new Error('Terminal Simulation status requires a terminal outcome');
   if (state.outcome && state.outcome.result !== state.status && !(state.status === 'recovery' && state.outcome.result === 'defeated') && !(state.status === 'active' && state.outcome.result === 'completed')) throw new Error('Terminal outcome does not match Simulation status');
-  if (state.hero.health < 0 || state.hero.health > state.hero.maxHealth) throw new Error('Hero health is outside its valid bounds');
-  if (state.combat.heroMana < 0 || state.combat.heroMana > state.combat.maxMana) throw new Error('Hero Mana is outside its valid bounds');
-  if (state.roomIndex < 0 || state.roomIndex > state.roomCount) throw new Error('Room progression is outside its valid bounds');
+  if (!Number.isFinite(state.hero.health) || !Number.isFinite(state.hero.maxHealth) || state.hero.maxHealth <= 0 || state.hero.health < 0 || state.hero.health > state.hero.maxHealth) throw new Error('Hero health is outside its valid bounds');
+  if (!Number.isFinite(state.combat.heroMana) || !Number.isFinite(state.combat.maxMana) || state.combat.maxMana < 0 || state.combat.heroMana < 0 || state.combat.heroMana > state.combat.maxMana) throw new Error('Hero Mana is outside its valid bounds');
+  if (!Number.isInteger(state.roomIndex) || !Number.isInteger(state.roomCount) || state.roomCount < 1 || state.roomIndex < 0 || state.roomIndex > state.roomCount) throw new Error('Room progression is outside its valid bounds');
+  if (!Number.isFinite(state.currency) || state.currency < 0) throw new Error('Persistent currency is outside its valid bounds');
+  if (!Number.isFinite(state.committed.experience) || state.committed.experience < 0 || !Number.isFinite(state.committed.currency) || state.committed.currency < 0) throw new Error('Committed rewards are outside their valid bounds');
+  if (!Number.isFinite(state.elapsedMilliseconds) || state.elapsedMilliseconds < 0 || !Number.isFinite(state.recoveryRemainingMilliseconds) || state.recoveryRemainingMilliseconds < 0) throw new Error('Simulation timing is outside its valid bounds');
   if (state.inventory.length > 12) throw new Error('Inventory exceeds its bounded capacity');
 }
 
@@ -167,4 +114,12 @@ export function assertGoldenScenarios(): void {
       throw new Error(`Golden scenario drift detected for ${scenario.name}; update the expected result intentionally`);
     }
   });
+}
+
+export function assertScenarioDeterminism(): void {
+  for (const scenario of GOLDEN_SCENARIOS) {
+    const first = runScenario(scenario);
+    const replay = runScenario(scenario);
+    if (JSON.stringify(first) !== JSON.stringify(replay)) throw new Error(`Simulation replay drift detected for ${scenario.name} with seed ${scenario.seed}`);
+  }
 }
