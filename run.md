@@ -14,7 +14,7 @@ npm run dev
 
 Open the local URL shown in the terminal, usually `http://localhost:5173`. Stop the app with `Ctrl+C`. Progress saves automatically in the browser.
 
-The deployed app is at https://wtvar.github.io/idler/.
+The deployed app is at http://cbritnell.co.uk/idler/.
 
 Generate developer Balance reports with `npm run balance:report`. Read `balance-reports/balance.md` or use `balance-reports/balance.json`. Band deviations print as advisory warnings.
 
