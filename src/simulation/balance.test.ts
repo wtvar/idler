@@ -31,7 +31,7 @@ describe('developer Balance report', () => {
   });
 
   it('keeps a balance deviation advisory', () => {
-    const report = buildBalanceReport([{ name: 'strict-band', scenario: { name: 'strict-band', version: 'v1-expedition-loop', seed: 7, durationMilliseconds: 20_000 }, count: 1, targets: { completionRate: { min: 2, max: 2 } } }]);
+    const report = buildBalanceReport([{ name: 'strict-band', scenario: { name: 'strict-band', version: 'v1-expedition-loop', seed: 7, durationMilliseconds: 120_000 }, count: 1, targets: { completionRate: { min: 2, max: 2 } } }]);
     expect(report.warnings).toEqual([expect.objectContaining({ checkpoint: 'strict-band', metric: 'completionRate' })]);
     expect(() => runDeveloperChecks()).not.toThrow();
   });

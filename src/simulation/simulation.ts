@@ -174,6 +174,11 @@ const emptyProgression = (): ProgressionState => ({
   },
 });
 
+function passiveBonus(progression: ProgressionState, stat: NonNullable<SkillDefinition['passiveEffect']>['stat']): number {
+  return SKILLS.filter((skill) => skill.kind === 'passive' && skill.passiveEffect?.stat === stat)
+    .reduce((total, skill) => total + (progression.skillRanks[skill.id] ?? 0) * skill.passiveEffect!.valuePerRank, 0);
+}
+
 function event(message: string, id: number, timestampMilliseconds: number): Event {
   return { id, timestampMilliseconds, message };
 }
@@ -186,10 +191,10 @@ function combatFor(enemyAttack = 0, enemyDefense = 0, progression = emptyProgres
     heroAttackProgress: 0,
     enemyAttackProgress: 0,
     heroMana: 20,
-    maxMana: HERO_MAX_MANA + progression.attributes.focus * 5 + focusRank * 2 + itemStats.maxMana,
-    heroManaRegeneration: HERO_MANA_REGENERATION + progression.attributes.focus * 0.2,
-    heroHealthRegeneration: HERO_HEALTH_REGENERATION + progression.attributes.vitality * 0.1,
-    heroDefense: 10 + progression.attributes.vitality * 0.5 + itemStats.defense,
+    maxMana: HERO_MAX_MANA + progression.attributes.focus * 5 + focusRank * 2 + itemStats.maxMana + passiveBonus(progression, 'maxMana'),
+    heroManaRegeneration: HERO_MANA_REGENERATION + progression.attributes.focus * 0.2 + passiveBonus(progression, 'manaRegeneration'),
+    heroHealthRegeneration: HERO_HEALTH_REGENERATION + progression.attributes.vitality * 0.1 + passiveBonus(progression, 'healthRegeneration'),
+    heroDefense: 10 + progression.attributes.vitality * 0.5 + itemStats.defense + passiveBonus(progression, 'defense'),
     enemyAttack,
     enemyDefense,
     heroCooldowns: {},
@@ -206,9 +211,9 @@ function derivedHero(progression: ProgressionState, equipment = emptyEquipment()
   const passiveRank = (id: string) => progression.skillRanks[id] ?? 0;
   const itemStats = equipmentStats(equipment);
   return {
-    attack: 8 + progression.attributes.might * 2 + itemStats.attack,
-    maxHealth: 100 + progression.attributes.vitality * 10 + passiveRank('tank-fortitude') * 3 + itemStats.maxHealth,
-    attackInterval: Math.max(1_000, HERO_ATTACK_INTERVAL * (1 - Math.min(0.5, progression.attributes.agility * 0.005 + passiveRank('general-quickness') * 0.005 + passiveRank('physical-tempo') * 0.003)) + itemStats.attackInterval),
+    attack: 8 + progression.attributes.might * 2 + itemStats.attack + passiveBonus(progression, 'attack'),
+    maxHealth: 100 + progression.attributes.vitality * 10 + passiveRank('tank-fortitude') * 3 + itemStats.maxHealth + passiveBonus(progression, 'maxHealth'),
+    attackInterval: Math.max(1_000, HERO_ATTACK_INTERVAL * (1 - Math.min(0.5, progression.attributes.agility * 0.005 + passiveRank('general-quickness') * 0.005 + passiveRank('physical-tempo') * 0.003)) + itemStats.attackInterval + passiveBonus(progression, 'attackInterval')),
   };
 }
 
@@ -367,10 +372,10 @@ function refreshProgressionPresentation(state: GameState, levelMessages?: string
     },
     combat: {
       ...state.combat,
-      maxMana: HERO_MAX_MANA + state.progression.attributes.focus * 5 + (state.progression.skillRanks['magic-focus'] ?? 0) * 2 + itemStats.maxMana,
-      heroManaRegeneration: (HERO_MANA_REGENERATION + state.progression.attributes.focus * 0.2) * auraMultiplier * (state.combat.timedBuff?.kind === 'mana-regeneration' ? TIMED_BUFF_MULTIPLIERS['mana-regeneration'] : 1),
-      heroHealthRegeneration: (HERO_HEALTH_REGENERATION + state.progression.attributes.vitality * 0.1) * auraMultiplier * (state.combat.timedBuff?.kind === 'health-regeneration' ? TIMED_BUFF_MULTIPLIERS['health-regeneration'] : 1),
-      heroDefense: (10 + state.progression.attributes.vitality * 0.5 + itemStats.defense) * (state.combat.timedBuff?.kind === 'defense' ? TIMED_BUFF_MULTIPLIERS.defense : 1),
+      maxMana: HERO_MAX_MANA + state.progression.attributes.focus * 5 + (state.progression.skillRanks['magic-focus'] ?? 0) * 2 + itemStats.maxMana + passiveBonus(state.progression, 'maxMana'),
+      heroManaRegeneration: (HERO_MANA_REGENERATION + state.progression.attributes.focus * 0.2 + passiveBonus(state.progression, 'manaRegeneration')) * auraMultiplier * (state.combat.timedBuff?.kind === 'mana-regeneration' ? TIMED_BUFF_MULTIPLIERS['mana-regeneration'] : 1),
+      heroHealthRegeneration: (HERO_HEALTH_REGENERATION + state.progression.attributes.vitality * 0.1 + passiveBonus(state.progression, 'healthRegeneration')) * auraMultiplier * (state.combat.timedBuff?.kind === 'health-regeneration' ? TIMED_BUFF_MULTIPLIERS['health-regeneration'] : 1),
+      heroDefense: (10 + state.progression.attributes.vitality * 0.5 + itemStats.defense + passiveBonus(state.progression, 'defense')) * (state.combat.timedBuff?.kind === 'defense' ? TIMED_BUFF_MULTIPLIERS.defense : 1),
       targetPolicy: state.progression.preparation.targetPolicy,
     },
     reviewQueue: reviewQueue(reviewState, levelMessages),
@@ -616,6 +621,7 @@ function restartExpedition(state: GameState, message: string): GameState {
   const fresh = enterRoom({
     ...state,
     status: 'active',
+    outcome: null,
     currency: state.currency - (selectedArea(state).attemptCost ?? 0),
     committed: { experience: 0, currency: 0 },
     recoveryRemainingMilliseconds: 0,

@@ -53,6 +53,7 @@ export type SkillDefinition = {
   cooldownMilliseconds: number;
   description: string;
   damageMultiplier?: number;
+  passiveEffect?: { stat: 'attack' | 'maxHealth' | 'defense' | 'attackInterval' | 'maxMana' | 'healthRegeneration' | 'manaRegeneration'; valuePerRank: number };
   targetPolicy?: TargetPolicy;
 };
 

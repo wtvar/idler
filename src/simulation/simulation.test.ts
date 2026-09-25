@@ -16,7 +16,7 @@ describe('deterministic simulation boundary', () => {
     expect(AREAS.filter(({ kind }) => kind === 'ordinary')).toHaveLength(20);
     expect(AREAS.filter(({ kind }) => kind === 'boss')).toHaveLength(4);
     expect(AREAS.find(({ id }) => id === REGION_BOSS_ID)).toMatchObject({ kind: 'region-boss', attemptCost: REGION_BOSS_ATTEMPT_COST });
-    expect(AREAS.filter(({ kind }) => kind === 'ordinary').every(({ rooms }) => rooms.length >= 3)).toBe(true);
+    expect(AREAS.every(({ rooms }) => rooms.length >= 10 && rooms.length <= 20)).toBe(true);
     expect(AREAS.filter(({ kind }) => kind === 'ordinary').slice(4, 20).every(({ rooms }) => rooms.length === 12)).toBe(true);
     expect(AREAS.filter(({ kind }) => kind === 'ordinary').flatMap(({ rooms }) => rooms).some((room) => room.type === 'combat' && (room.championChance ?? 0) > 0)).toBe(true);
   });
@@ -68,14 +68,14 @@ describe('deterministic simulation boundary', () => {
     expect(selected.selectedAreaId).toBe('region-chapter-boss-5');
     selected = dispatch(selected, { type: 'START_EXPEDITION' });
     selected = dispatch(selected, { type: 'STOP_AUTO_REPEAT' });
-    selected = dispatch(selected, { type: 'ADVANCE_TIME', milliseconds: 20_000 });
+    selected = dispatch(selected, { type: 'ADVANCE_TIME', milliseconds: 120_000 });
     expect(getAreaMap(selected).some(({ id, status }) => id === 'region-area-6' && status === 'unlocked')).toBe(true);
   });
 
   it('unlocks Areas sequentially and requires replaying an ordinary Area before its Boss Area', () => {
     let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
     game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 10_000 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 120_000 });
     expect(game.status).toBe('preparation');
     expect(getAreaMap(game).slice(0, 3).map(({ id, status }) => ({ id, status }))).toEqual([
       { id: 'sunlit-meadow', status: 'completed' },
@@ -87,15 +87,15 @@ describe('deterministic simulation boundary', () => {
     expect(game.areaName).toBe('Moonlit Grove');
     game = dispatch(game, { type: 'START_EXPEDITION' });
     game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 20_000 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 180_000 });
     expect(getAreaMap(game).find(({ id }) => id === 'region-area-3')?.status).toBe('unlocked');
 
     game = dispatch(game, { type: 'START_EXPEDITION' });
     game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 20_000 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 180_000 });
     expect(getAreaMap(game).slice(0, 3).map(({ id, status }) => ({ id, status }))).toEqual([
       { id: 'sunlit-meadow', status: 'completed' },
-      { id: 'moonlit-grove', status: 'replayable' },
+      { id: 'moonlit-grove', status: 'completed' },
       { id: 'region-area-3', status: 'unlocked' },
     ]);
     const beforeBoss = { ...game, areaProgress: { ...game.areaProgress, 'region-area-5': { completions: 1 } } };
@@ -167,7 +167,7 @@ describe('deterministic simulation boundary', () => {
     let completed = dispatch(createGame(), { type: 'SELECT_TIMED_BUFF', buff: 'defense' });
     completed = dispatch(completed, { type: 'START_EXPEDITION' });
     completed = dispatch(completed, { type: 'STOP_AUTO_REPEAT' });
-    completed = dispatch(completed, { type: 'ADVANCE_TIME', milliseconds: 9_900 });
+    completed = dispatch(completed, { type: 'ADVANCE_TIME', milliseconds: 120_000 });
     expect(completed.outcome?.result).toBe('completed');
     expect(completed.combat.timedBuff).toBeNull();
     expect(completed.outcome?.consumables.timedBuff).toBe('defense');
@@ -316,6 +316,11 @@ describe('deterministic simulation boundary', () => {
     game = dispatch(game, { type: 'INVEST_SKILL', skillId: 'tank-fortitude' });
     expect(game.combat.maxMana).toBe(32);
     expect(game.hero.maxHealth).toBe(103);
+
+    game = { ...game, progression: { ...game.progression, level: 13, skillPoints: 1 } };
+    const attackBefore = game.hero.attack;
+    game = dispatch(game, { type: 'INVEST_SKILL', skillId: 'physical-passive-2' });
+    expect(game.hero.attack).toBeGreaterThan(attackBefore);
   });
 
   it('awards persistent XP only when a Room completes', () => {
@@ -425,20 +430,17 @@ describe('deterministic simulation boundary', () => {
 
   it('completes the authored fixture and commits the final Room', () => {
     let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 4_200 });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 100 });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 5_600 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 90_000 });
     expect(game.status).toBe('active');
     expect(game.roomIndex).toBe(0);
-    expect(game.committed).toEqual({ experience: 0, currency: 0 });
-    expect(game.outcomeHistory.at(-1)).toMatchObject({ result: 'completed', committed: { experience: 30, currency: 6 }, willRestart: true });
+    expect(game.outcomeHistory.at(-1)).toMatchObject({ result: 'completed', roomReached: 12, committed: { experience: 194, currency: 31 }, willRestart: true });
     expect(game.events.some(({ message }) => message.includes('Expedition completed'))).toBe(true);
   });
 
   it('returns to Preparation after completion when automatic repeat is stopped', () => {
     let game = dispatch(createGame(), { type: 'START_EXPEDITION' });
     game = dispatch(game, { type: 'STOP_AUTO_REPEAT' });
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 9_900 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 120_000 });
     expect(game.status).toBe('preparation');
     expect(game.outcome?.result).toBe('completed');
     expect(game.outcome?.willRestart).toBe(false);
@@ -450,7 +452,7 @@ describe('deterministic simulation boundary', () => {
     let game = dispatch(createGame(), { type: 'SET_AUTO_REPEAT', enabled: false });
     game = dispatch(game, { type: 'START_EXPEDITION' });
     expect(game.autoRepeat).toBe(false);
-    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 9_900 });
+    game = dispatch(game, { type: 'ADVANCE_TIME', milliseconds: 120_000 });
     expect(game.status).toBe('preparation');
     expect(game.outcome?.willRestart).toBe(false);
   });

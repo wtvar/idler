@@ -109,9 +109,10 @@ describe('playable browser shell', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Automatically repeat Expeditions' }));
     const advance = screen.getByRole('button', { name: 'Simulate 5 minutes' });
     await user.click(advance);
-    expect(screen.getByText('Level 1 · 30 XP')).toBeInTheDocument();
+    const progress = () => screen.getByText(/Level \d+ · \d+ XP/).textContent ?? '';
+    expect(progress()).toBe('Level 2 · 194 XP');
     await user.click(advance);
-    expect(screen.getByText('Level 1 · 60 XP')).toBeInTheDocument();
+    expect(progress()).toBe('Level 4 · 388 XP');
   });
 
   it('lets the player inspect and equip a found Item between Expeditions', async () => {

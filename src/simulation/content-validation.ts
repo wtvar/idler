@@ -64,6 +64,16 @@ export function validateContent(areas: AreaDefinition[] = AREAS, skills: SkillDe
   skills.forEach((skill, index) => {
     if (!skillReachable(skill.id)) add('unreachable-skill', `Skill ${skill.id} has a missing or cyclic prerequisite chain`, `skills[${index}].prerequisites`);
   });
+  for (const tree of ['physical', 'tank', 'magic'] as const) {
+    const counts = { active: 0, passive: 0, ultimate: 0, mastery: 0 };
+    for (const skill of skills) if (skill.tree === tree && skill.kind in counts) counts[skill.kind as keyof typeof counts] += 1;
+    if (counts.active !== 10 || counts.passive !== 5 || counts.ultimate !== 2 || counts.mastery !== 1) {
+      add('skill-tree-shape', `${tree} tree needs 10 Active Skills, 5 Passive Skills, 2 Ultimates, and 1 Mastery`, `skills.${tree}`);
+    }
+    if (skills.some((skill) => skill.tree === tree && skill.kind === 'mastery' && (skill.unlockLevel !== 30 || skill.maxRank !== 1))) {
+      add('mastery-contract', `${tree} Mastery must unlock at level 30 and have one rank`, `skills.${tree}`);
+    }
+  }
 
   const areaIds = new Set<string>();
   if (areas.length === 0 || !areas.some((area) => area.unlock?.type === 'start')) add('missing-start-area', 'Content needs a start Area', 'areas');
@@ -75,7 +85,7 @@ export function validateContent(areas: AreaDefinition[] = AREAS, skills: SkillDe
     const rooms = Array.isArray(area.rooms) ? area.rooms : [];
     const encounterTable = Array.isArray(area.encounterTable) ? area.encounterTable : [];
     if (!Array.isArray(area.rooms)) add('invalid-room-sequence', `Area ${area.id} needs a Room sequence`, `${path}.rooms`);
-    else if (!integerRange(rooms.length, 1, MAX_ROOMS)) add(rooms.length === 0 ? 'empty-rooms' : 'room-safety-bound', `Area ${area.id} needs 1 to ${MAX_ROOMS} Rooms`, `${path}.rooms`);
+    else if (!integerRange(rooms.length, 10, 20)) add(rooms.length === 0 ? 'empty-rooms' : 'area-room-count', `Area ${area.id} needs 10 to 20 Rooms`, `${path}.rooms`);
     if (!Array.isArray(area.encounterTable)) add('invalid-encounter-table', `Area ${area.id} needs an encounter table`, `${path}.encounterTable`);
     else if (encounterTable.length === 0) add('empty-encounter-table', `Area ${area.id} needs an encounter table`, `${path}.encounterTable`);
     const encounterNames = new Set<string>();
